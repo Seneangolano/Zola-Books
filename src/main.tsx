@@ -1,0 +1,124 @@
+import {StrictMode} from 'react';
+import {createRoot} from 'react-dom/client';
+import { HelmetProvider } from 'react-helmet-async';
+import * as Sentry from '@sentry/react';
+import App from './App.tsx';
+import { AppProvider } from './context/AppContext.tsx';
+import { initSentry } from './lib/sentry';
+import './index.css';
+
+// Initialize Sentry error monitoring
+initSentry();
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Sentry.ErrorBoundary
+      fallback={({ error, resetError }) => (
+        <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-slate-900 border border-rose-500/30 p-8 rounded-3xl max-w-md w-full shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto text-2xl font-black">
+              ⚠️
+            </div>
+            <h2 className="text-xl font-bold text-slate-100">Ops! Algo inesperado aconteceu</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Ocorreu um erro no Zola Books. A nossa equipa foi notificada automaticamente em tempo real via Sentry.
+            </p>
+            {error && (
+              <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-left text-[11px] font-mono text-rose-300 overflow-x-auto max-h-32">
+                {String(error.message || error)}
+              </div>
+            )}
+            <button
+              onClick={resetError}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-amber-500/20"
+            >
+              Recarregar Aplicação Zola Books
+            </button>
+          </div>
+        </div>
+      )}
+    >
+      <HelmetProvider>
+        <AppProvider>
+          <App />
+        </AppProvider>
+      </HelmetProvider>
+    </Sentry.ErrorBoundary>
+  </StrictMode>,
+);
+
+/**
+ * Service Worker & Push Notification Registration Logic for Zola Books 🇦🇴
+ * Prepares the application to receive real-time push alerts about new literary releases
+ * even when the browser tab or app is closed.
+ */
+async function registerServiceWorkerAndRequestPushPermission() {
+  if (!('serviceWorker' in navigator)) {
+    console.warn('⚠️ [Zola Books SW] Service Workers não são suportados neste navegador.');
+    return;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    console.log('✅ [Zola Books SW] Service Worker registado com sucesso no escopo:', registration.scope);
+
+    // Listen for Service Worker updates
+    registration.addEventListener('updatefound', () => {
+      const installingWorker = registration.installing;
+      if (installingWorker) {
+        installingWorker.addEventListener('statechange', () => {
+          if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            console.log('✨ [Zola Books SW] Nova versão da PWA/E-reader disponível! Recarregue para atualizar.');
+          }
+        });
+      }
+    });
+
+    // Request Push Notification Permissions for new literary releases
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') {
+        console.log('🔔 [Zola Books Push] A solicitar permissão de Notificações Push para lançamentos literários...');
+        
+        // Prompt for notification permission shortly after page load
+        setTimeout(async () => {
+          try {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              console.log('🎉 [Zola Books Push] Permissão de notificações concedida pelo leitor!');
+              
+              if (registration.active) {
+                registration.showNotification('📚 Zola Books 🇦🇴 — Notificações Ativas!', {
+                  body: 'Vais receber alertas prioritários sobre novos lançamentos literários de autores angolanos.',
+                  icon: '/manifest-icon-192.png',
+                  badge: '/manifest-icon-192.png',
+                  vibrate: [100, 50, 100],
+                  tag: 'zola-welcome-notif'
+                } as NotificationOptions);
+              }
+            } else if (permission === 'denied') {
+              console.warn('⚠️ [Zola Books Push] Permissão de notificações recusada pelo leitor.');
+            }
+          } catch (notifErr) {
+            console.error('❌ [Zola Books Push] Erro ao solicitar permissão de notificações:', notifErr);
+          }
+        }, 2000);
+
+      } else if (Notification.permission === 'granted') {
+        console.log('✅ [Zola Books Push] Permissão de notificações já concedida previamente.');
+      } else {
+        console.log('ℹ️ [Zola Books Push] Estado das notificações push:', Notification.permission);
+      }
+    }
+
+  } catch (err) {
+    console.error('❌ [Zola Books SW] Falha ao registar o Service Worker:', err);
+  }
+}
+
+// Execute registration when the window has finished loading
+if (document.readyState === 'complete') {
+  registerServiceWorkerAndRequestPushPermission();
+} else {
+  window.addEventListener('load', registerServiceWorkerAndRequestPushPermission);
+}
+

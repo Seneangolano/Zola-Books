@@ -1,0 +1,33 @@
+{
+  "appId": "com.zolabooks.angola",
+  "appName": "Zola Books",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#020617"
+  },
+  "ios": {
+    "contentInset": "always",
+    "allowsLinkPreview": true,
+    "backgroundColor": "#020617",
+    "preferredContentMode": "mobile"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#020617",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#020617"
+    }
+  }
+}

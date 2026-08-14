@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.zolabooks.angola",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:7F:17:F1:67:8B:2A:01:8A:DF:25:39:CA:46:12:12:48:9A:8A:2C:BF:BF:99:98 text_sample_sha256"
+      ]
+    }
+  }
+]

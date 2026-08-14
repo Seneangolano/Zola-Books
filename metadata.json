@@ -1,0 +1,10 @@
+{
+  "name": "Remix Zola Books",
+  "description": "Plataforma profissional de livraria e biblioteca digital inspirada na literatura angolana e africana para o mundo.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

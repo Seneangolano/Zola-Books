@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Sync Data",
+      "description": "User profile, library of purchased books, favorite book IDs, reading progress map, and bookmarks synchronized across devices",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique user identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "role": {
+          "type": "string",
+          "description": "User role in system"
+        },
+        "purchasedBookIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of book IDs owned/purchased in the user digital library"
+        },
+        "favoriteBookIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of book IDs marked as favorite by the user"
+        },
+        "readingProgressMap": {
+          "type": "object",
+          "description": "Map of book IDs to reading progress objects (percentage, chapter index, etc.)"
+        },
+        "bookmarks": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "List of saved bookmarks with book ID, chapter, snippet, note and timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["id", "email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/users"
+      },
+      "description": "User profile, library of purchased books, favorite book IDs, reading progress, and bookmarks synchronized across devices"
+    }
+  }
+}

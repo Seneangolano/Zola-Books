@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zola Books</string>
+    <string name="title_activity_main">Zola Books</string>
+    <string name="package_name">com.zolabooks.angola</string>
+    <string name="custom_url_scheme">zolabooks</string>
+    
+    <!-- TWA AssetLinks Statement for Trusted Web Activity & Android 15 Verification -->
+    <string name="asset_statements">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://zolabooks.app\"}}]</string>
+</resources>

@@ -1,0 +1,30 @@
+{
+  "short_name": "Zola Books",
+  "name": "Zola Books — Livraria Digital & E-Reader Offline",
+  "id": "/",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "categories": ["books", "entertainment", "education"],
+  "dir": "ltr",
+  "lang": "pt",
+  "description": "Livraria Digital de Angola com suporte a leitura offline de e-books via Service Worker no Android 15."
+}

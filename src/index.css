@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* Global theme transition smoothing */
+body, div, header, footer, section, button, input, select, textarea {
+  transition: background-color 0.25s ease-in-out, border-color 0.25s ease-in-out, color 0.25s ease-in-out;
+}
+
+/* Light Mode Global Overrides */
+.light {
+  color-scheme: light;
+}
+
+.light body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Surfaces & Containers */
+.light .bg-slate-950 {
+  background-color: #f8fafc !important;
+}
+
+.light .bg-slate-900 {
+  background-color: #ffffff !important;
+}
+
+.light .bg-slate-900\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.light .bg-slate-900\/90 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.light .bg-slate-900\/80 {
+  background-color: rgba(241, 245, 249, 0.9) !important;
+}
+
+.light .bg-slate-900\/60 {
+  background-color: rgba(241, 245, 249, 0.7) !important;
+}
+
+.light .bg-slate-900\/40 {
+  background-color: rgba(241, 245, 249, 0.5) !important;
+}
+
+.light .bg-slate-800 {
+  background-color: #f1f5f9 !important;
+}
+
+.light .bg-slate-800\/80 {
+  background-color: #e2e8f0 !important;
+}
+
+.light .bg-slate-800\/60 {
+  background-color: #e2e8f0 !important;
+}
+
+.light .bg-slate-950\/80 {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+.light .bg-slate-950\/60 {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+/* Typography in Light Mode */
+.light .text-slate-100, 
+.light .text-white {
+  color: #0f172a !important;
+}
+
+.light .text-slate-200 {
+  color: #1e293b !important;
+}
+
+.light .text-slate-300 {
+  color: #334155 !important;
+}
+
+.light .text-slate-400 {
+  color: #64748b !important;
+}
+
+.light .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Borders in Light Mode */
+.light .border-slate-800 {
+  border-color: #e2e8f0 !important;
+}
+
+.light .border-slate-800\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+.light .border-slate-800\/60 {
+  border-color: #e2e8f0 !important;
+}
+
+.light .border-slate-700 {
+  border-color: #cbd5e1 !important;
+}
+
+.light .border-slate-700\/80 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Inputs & Form Controls */
+.light input, .light select, .light textarea {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Brand Accent Overrides (Keep Gold/Amber text vivid) */
+.light .text-amber-400 {
+  color: #d97706 !important;
+}
+
+.light .text-amber-300 {
+  color: #b45309 !important;
+}
+
+.light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+.light .bg-amber-500\/10 {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+
+.light .border-amber-500\/20, .light .border-amber-500\/30 {
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Android 15 (API 35) Edge-to-Edge Safe Area Insets & Visual Viewport */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --vh: 1vh;
+  --vv-height: 100vh;
+  --keyboard-height: 0px;
+}
+
+.min-h-screen-vv {
+  min-height: calc(var(--vh, 1vh) * 100);
+}
+
+.h-screen-vv {
+  height: calc(var(--vh, 1vh) * 100);
+}
+
+.max-h-screen-vv {
+  max-height: calc(var(--vh, 1vh) * 100);
+}
+
+.safe-area-top {
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+}
+
+.safe-area-bottom {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
+.safe-area-pt {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.keyboard-aware-pb {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--keyboard-height, 0px));
+}
+
