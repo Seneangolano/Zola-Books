@@ -10,6 +10,7 @@ export type SoundEffectType =
   | 'cart_add'      // Adding item to cart
   | 'cart_remove'   // Removing item from cart
   | 'success'       // Order completion or payment success
+  | 'sale'          // Real-time seller sale alert chime & register
   | 'notification'  // Toast or alert notification
   | 'toggle'        // Switch/toggle button
   | 'error';        // Error/alert tone
@@ -145,6 +146,25 @@ export function playSoundEffect(type: SoundEffectType): void {
           gain.connect(ctx.destination);
           osc.start(start);
           osc.stop(start + 0.35);
+        });
+        break;
+      }
+
+      case 'sale': {
+        // Joyful double cash register chime & bright sparkle (G5 -> B5 -> D6 -> G6)
+        const notes = [783.99, 987.77, 1174.66, 1567.98];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const start = now + idx * 0.055;
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.28, start);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.3);
         });
         break;
       }

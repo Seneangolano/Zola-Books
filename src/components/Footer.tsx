@@ -1,9 +1,9 @@
 import React from 'react';
-import { BookOpen, ShieldCheck, Heart, MessageCircle, Globe, Smartphone, Lock, Sun, Moon, Volume2 } from 'lucide-react';
+import { BookOpen, ShieldCheck, MessageCircle, Sun, Moon, Volume2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export const Footer: React.FC = () => {
-  const { setActiveView, setIsSupportWhatsAppOpen, setIsAppDownloadModalOpen, setIsRoadmapModalOpen, theme, toggleTheme, setIsAccessibilityModalOpen, isSoundFeedbackActive } = useApp();
+  const { setActiveView, setIsSupportWhatsAppOpen, setIsRoadmapModalOpen, theme, toggleTheme, setIsAccessibilityModalOpen, isSoundFeedbackActive } = useApp();
 
   return (
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-400 text-xs pt-12 pb-24 md:pb-12">
@@ -77,15 +77,8 @@ export const Footer: React.FC = () => {
           </div>
 
           {/* Support & App */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <h4 className="font-extrabold uppercase text-slate-200 tracking-wider text-[11px]">Aplicações &amp; Suporte</h4>
-            <button
-              onClick={() => setIsAppDownloadModalOpen(true)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-amber-300 font-bold p-2.5 rounded-xl border border-amber-500/30 flex items-center justify-center gap-2 transition-colors"
-            >
-              <Smartphone className="w-4 h-4 text-amber-400" />
-              <span>Baixar App Android / iOS</span>
-            </button>
             <button
               onClick={() => setIsSupportWhatsAppOpen(true)}
               className="w-full bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 font-bold p-2.5 rounded-xl border border-emerald-500/30 flex items-center justify-center gap-2 transition-colors"

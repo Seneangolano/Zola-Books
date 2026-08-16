@@ -32,9 +32,19 @@ export const NewReleasesCarousel: React.FC = () => {
 
   // Filter new releases: books marked isNewRelease or published in 2025/2026 or top 5 newest
   const newReleaseBooks = React.useMemo(() => {
-    const filtered = books.filter(b => b.isNewRelease || b.publishedYear >= 2025 || b.isFeatured);
-    if (filtered.length >= 3) return filtered;
-    return [...books].sort((a, b) => b.publishedYear - a.publishedYear);
+    const rawList = books.filter(b => b.isNewRelease || b.publishedYear >= 2025 || b.isFeatured);
+    const source = rawList.length >= 3 ? rawList : [...books].sort((a, b) => b.publishedYear - a.publishedYear);
+    
+    // Deduplicate books by ID
+    const seen = new Set<string>();
+    const unique: Book[] = [];
+    for (const b of source) {
+      if (b && b.id && !seen.has(b.id)) {
+        seen.add(b.id);
+        unique.push(b);
+      }
+    }
+    return unique;
   }, [books]);
 
   const [currentIndex, setCurrentIndex] = useState(0);

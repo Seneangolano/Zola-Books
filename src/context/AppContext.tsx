@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import { Book, User, CartItem, Currency, Order, UserRole, AppNotification, BookClub, BookClubDiscussion, BookClubComment, BookProgress, Bookmark, Highlight, HighlightColor } from '../types';
-import { MOCK_BOOKS, INITIAL_USERS, INITIAL_EXCHANGE_RATE, INITIAL_ORDERS } from '../data/mockData';
+import { Book, User, CartItem, Currency, Order, UserRole, AppNotification, SellerSaleNotification, BookClub, BookClubDiscussion, BookClubComment, BookProgress, Bookmark, Highlight, HighlightColor, UserSecurityBackup, SyncHistoryEntry } from '../types';
+import { MOCK_BOOKS, INITIAL_USERS, INITIAL_EXCHANGE_RATE, INITIAL_ORDERS, INITIAL_SELLER_SALES } from '../data/mockData';
 import { INITIAL_BOOK_CLUBS } from '../data/bookClubsData';
 import { api } from '../services/api';
 import { 
@@ -18,13 +18,31 @@ import {
   UserSyncData
 } from '../lib/firebase';
 import { 
+  getSyncHistory,
+  logSyncEvent,
+  clearSyncHistory,
+  getDeviceFingerprint,
+  formatDurationMs
+} from '../lib/syncManager';
+import { imagePrefetchService, ImageCacheStats } from '../services/imagePrefetchService';
+import { 
   registerServiceWorker, 
   getOfflineCachedBooks, 
   cacheBookForOffline, 
   removeOfflineCachedBook, 
   clearAllOfflineCachedBooks,
   isBookCachedOffline,
-  setupNetworkListeners 
+  setupNetworkListeners,
+  getPinnedOfflineBookIds,
+  setPinnedOfflineBookIds,
+  togglePinOfflineBook,
+  getAndroidStorageSettings,
+  saveAndroidStorageSettings,
+  checkIsPersistentStorageGranted,
+  requestPersistentStoragePermission,
+  getDetailedStorageEstimate,
+  cleanUnpinnedOfflineBooks,
+  AndroidStorageSettings
 } from '../lib/offlineManager';
 import { triggerHapticFeedback } from '../lib/haptic';
 import { playSoundEffect, isSoundFeedbackEnabled as getIsSoundFeedbackEnabled, setSoundFeedbackEnabled as setSoundFeedbackEnabledUtil } from '../lib/soundEffects';
@@ -102,6 +120,7 @@ interface AppContextType {
   favoriteBookIds: string[];
   toggleFavorite: (bookId: string) => void;
   purchasedBooks: Book[];
+  claimFreeBook: (book: Book) => Promise<boolean>;
 
   // Author Following & In-App Push Notifications
   followedAuthors: string[];
@@ -144,11 +163,22 @@ interface AppContextType {
   setActiveTestPass: (pass: { bookId?: string; expiresAt?: number; tester?: string } | null) => void;
   isReadingReportModalOpen: boolean;
   setIsReadingReportModalOpen: (open: boolean) => void;
+  isDeviceSyncModalOpen: boolean;
+  setIsDeviceSyncModalOpen: (open: boolean) => void;
 
   // Orders
   orders: Order[];
   createNewOrder: (orderData: Partial<Order>) => Promise<Order>;
   approveIbanPayment: (orderId: string) => Promise<void>;
+
+  // Seller Sales & Real-Time Notifications
+  sellerSales: SellerSaleNotification[];
+  latestSellerSalePush: SellerSaleNotification | null;
+  clearLatestSellerSalePush: () => void;
+  triggerSellerSaleNotification: (saleData: Partial<SellerSaleNotification> & { bookId: string; bookTitle: string; amountAOA: number; amountUSD: number }) => SellerSaleNotification;
+  simulateTestSellerSale: (targetBookId?: string) => SellerSaleNotification;
+  markSellerSaleAsRead: (saleId: string) => void;
+  clearAllSellerSales: () => void;
 
   // Notifications & Toast
   notifications: AppNotification[];
@@ -169,6 +199,28 @@ interface AppContextType {
   clearAllOfflineBooks: () => void;
   isBookOfflineCached: (bookId: string) => boolean;
   isBookDownloading: (bookId: string) => boolean;
+
+  // Android Storage Optimization & Permanent Offline Cache
+  pinnedOfflineBookIds: string[];
+  isBookPinnedOffline: (bookId: string) => boolean;
+  togglePinBookForOffline: (bookId: string) => Promise<void>;
+  setBookPinnedOffline: (bookId: string, pinned: boolean) => Promise<void>;
+  androidStorageSettings: AndroidStorageSettings;
+  updateAndroidStorageSettings: (settings: Partial<AndroidStorageSettings>) => void;
+  cleanUnpinnedOfflineCache: () => Promise<{ removedCount: number; freedMb: number }>;
+  requestDevicePersistentStorage: () => Promise<boolean>;
+  isPersistentStorageGranted: boolean;
+  deviceStorageEstimate: { usageMb: number; quotaMb: number; percent: number; isPersisted: boolean };
+  refreshStorageEstimate: () => Promise<void>;
+  pinAndDownloadAllPurchased: () => Promise<void>;
+
+  // 3G Image & Cover Cache API
+  imageCacheStats: ImageCacheStats;
+  isPrefetchingImages: boolean;
+  prefetchImagesProgress: { loaded: number; total: number; percent: number } | null;
+  prefetchAllCatalogImages: () => Promise<void>;
+  clearImageCache: () => Promise<void>;
+  refreshImageCacheStats: () => Promise<void>;
 
   // Book Clubs & Reading Groups
   bookClubs: BookClub[];
@@ -206,10 +258,27 @@ interface AppContextType {
   updateHighlightNote: (highlightId: string, note: string) => void;
   getHighlightsForBook: (bookId: string) => Highlight[];
 
-  // Cloud Sync (Firestore)
+  // Cloud Sync (Firestore) & Device Synchronization
   cloudSyncStatus: 'synced' | 'syncing' | 'offline' | 'error';
   lastSyncedAt: Date | null;
+  syncHistory: SyncHistoryEntry[];
   triggerCloudSync: () => Promise<void>;
+  forceUploadToCloud: () => Promise<{ success: boolean; message: string; details?: any }>;
+  forceDownloadFromCloud: () => Promise<{ success: boolean; message: string; details?: any }>;
+  forceBidirectionalSync: () => Promise<{ success: boolean; message: string; details?: any }>;
+  testCloudConnection: () => Promise<{ success: boolean; latencyMs: number; message: string }>;
+  clearSyncHistoryLog: () => void;
+  getRemoteSyncDataPreview: () => Promise<UserSyncData | null>;
+
+  // Security Backup Engine (.json)
+  exportUserDataBackup: () => void;
+  importUserDataBackup: (backupInput: string | object) => Promise<{
+    success: boolean;
+    progressCount: number;
+    bookmarksCount: number;
+    highlightsCount: number;
+    message: string;
+  }>;
 }
 
 const INITIAL_READING_PROGRESS: Record<string, BookProgress> = {
@@ -245,8 +314,20 @@ const GUEST_USER: User = {
   createdAt: new Date().toISOString()
 };
 
+const deduplicateBooks = (list: Book[]): Book[] => {
+  const seen = new Set<string>();
+  const res: Book[] = [];
+  for (const b of list) {
+    if (b && b.id && !seen.has(b.id)) {
+      seen.add(b.id);
+      res.push(b);
+    }
+  }
+  return res;
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [books, setBooks] = useState<Book[]>(MOCK_BOOKS);
+  const [books, setBooks] = useState<Book[]>(() => deduplicateBooks(MOCK_BOOKS));
   const [isLoadingBooks, setIsLoadingBooks] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
@@ -445,6 +526,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isTestLinkModalOpen, setIsTestLinkModalOpen] = useState<boolean>(false);
   const [testLinkDefaultBook, setTestLinkDefaultBook] = useState<Book | null>(null);
   const [isReadingReportModalOpen, setIsReadingReportModalOpen] = useState<boolean>(false);
+  const [isDeviceSyncModalOpen, setIsDeviceSyncModalOpen] = useState<boolean>(false);
   const [activeTestPass, setActiveTestPass] = useState<{
     bookId?: string;
     expiresAt?: number;
@@ -457,6 +539,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [sellerSales, setSellerSales] = useState<SellerSaleNotification[]>(() => {
+    const saved = localStorage.getItem('zolabooks_seller_sales');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        // use default
+      }
+    }
+    return INITIAL_SELLER_SALES;
+  });
+  const [latestSellerSalePush, setLatestSellerSalePush] = useState<SellerSaleNotification | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('zolabooks_seller_sales', JSON.stringify(sellerSales));
+    } catch {
+      // ignore
+    }
+  }, [sellerSales]);
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   // Theme State (Light/Dark Mode)
@@ -489,22 +593,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       navigator.serviceWorker.addEventListener('message', handleSwMessage);
     }
 
-    // Listen to network online/offline events
+    // Listen to network online/offline events (maintains connection state without pop-up toasts)
     const cleanupNetwork = setupNetworkListeners((onlineStatus) => {
       setIsOnline(onlineStatus);
-      if (!onlineStatus) {
-        addNotification(
-          'Modo Offline Ativado 📶',
-          'Estás sem ligação à internet. A tua biblioteca e livros descarregados continuam 100% disponíveis para leitura!',
-          'system'
-        );
-      } else {
-        addNotification(
-          'Ligação Restabelecida 🌐',
-          'Ligado à internet! Sincronização em nuvem reativada.',
-          'system'
-        );
-      }
     });
 
     return () => {
@@ -563,6 +654,138 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isBookDownloading = (bookId: string): boolean => {
     return downloadingBookIds.includes(bookId);
+  };
+
+  // Android Storage Optimization & Permanent Offline Cache State
+  const [pinnedOfflineBookIds, setPinnedOfflineBookIdsState] = useState<string[]>(() => getPinnedOfflineBookIds());
+  const [androidStorageSettings, setAndroidStorageSettingsState] = useState<AndroidStorageSettings>(() => getAndroidStorageSettings());
+  const [isPersistentStorageGranted, setIsPersistentStorageGranted] = useState<boolean>(false);
+  const [deviceStorageEstimate, setDeviceStorageEstimate] = useState<{
+    usageMb: number;
+    quotaMb: number;
+    percent: number;
+    isPersisted: boolean;
+  }>({ usageMb: 0.5, quotaMb: 1024, percent: 0.1, isPersisted: false });
+
+  const refreshStorageEstimate = async () => {
+    try {
+      const estimate = await getDetailedStorageEstimate();
+      setDeviceStorageEstimate(estimate);
+      setIsPersistentStorageGranted(estimate.isPersisted);
+    } catch (e) {
+      console.warn('Erro ao atualizar estimativa de armazenamento:', e);
+    }
+  };
+
+  useEffect(() => {
+    refreshStorageEstimate();
+    checkIsPersistentStorageGranted().then(granted => setIsPersistentStorageGranted(granted));
+  }, [offlineBooks, pinnedOfflineBookIds]);
+
+  const isBookPinnedOffline = (bookId: string): boolean => {
+    return pinnedOfflineBookIds.includes(bookId);
+  };
+
+  const setBookPinnedOffline = async (bookId: string, pinned: boolean) => {
+    if (!bookId) return;
+    const current = getPinnedOfflineBookIds();
+    let next: string[];
+    if (pinned) {
+      next = current.includes(bookId) ? current : [...current, bookId];
+      // If book is not yet cached offline, automatically cache it now
+      const bookToCache = books.find(b => b.id === bookId) || purchasedBooks.find(b => b.id === bookId);
+      if (bookToCache && !isBookOfflineCached(bookId)) {
+        await downloadBookForOffline(bookToCache);
+      }
+      addNotification(
+        'Livro Fixado em Cache Permanente 📌',
+        `Este e-book será mantido na memória interna do dispositivo mesmo durante limpezas automáticas de cache Android.`,
+        'system'
+      );
+    } else {
+      next = current.filter(id => id !== bookId);
+      addNotification(
+        'Removido da Cache Permanente',
+        'O e-book agora está sujeito à gestão padrão de armazenamento do sistema.',
+        'system'
+      );
+    }
+    setPinnedOfflineBookIds(next);
+    setPinnedOfflineBookIdsState(next);
+    await refreshStorageEstimate();
+  };
+
+  const togglePinBookForOffline = async (bookId: string) => {
+    const isPinned = isBookPinnedOffline(bookId);
+    await setBookPinnedOffline(bookId, !isPinned);
+  };
+
+  const updateAndroidStorageSettings = (newSettings: Partial<AndroidStorageSettings>) => {
+    const updated = saveAndroidStorageSettings(newSettings);
+    setAndroidStorageSettingsState(updated);
+    addNotification('Definições de Armazenamento Atualizadas', 'As tuas preferências de cache offline foram guardadas.', 'system');
+  };
+
+  const cleanUnpinnedOfflineCache = async (): Promise<{ removedCount: number; freedMb: number }> => {
+    const result = await cleanUnpinnedOfflineBooks();
+    setOfflineBooks(getOfflineCachedBooks());
+    await refreshStorageEstimate();
+    if (result.removedCount > 0) {
+      addNotification(
+        'Armazenamento Otimizado 🧹',
+        `${result.removedCount} livro(s) temporário(s) removido(s). ${result.freedMb.toFixed(1)} MB libertados no armazenamento interno!`,
+        'system'
+      );
+    } else {
+      addNotification(
+        'Cache Otimizado',
+        'Todos os livros atualmente no cache já estão marcados como permanentes.',
+        'system'
+      );
+    }
+    return result;
+  };
+
+  const requestDevicePersistentStorage = async (): Promise<boolean> => {
+    const granted = await requestPersistentStoragePermission();
+    setIsPersistentStorageGranted(granted);
+    await refreshStorageEstimate();
+    if (granted) {
+      addNotification(
+        'Armazenamento Persistente Concedido 🛡️',
+        'O Android/Navegador autorizou armazenamento persistente. Os teus livros fixados estão protegidos contra limpeza automática do sistema.',
+        'system'
+      );
+    } else {
+      addNotification(
+        'Estado de Armazenamento',
+        'O armazenamento opera em modo padrão. Fixa os livros prioritários para mantê-los protegidos.',
+        'system'
+      );
+    }
+    return granted;
+  };
+
+  const pinAndDownloadAllPurchased = async () => {
+    const allBooks = [...purchasedBooks];
+    const allIds = allBooks.map(b => b.id);
+    setPinnedOfflineBookIds(allIds);
+    setPinnedOfflineBookIdsState(allIds);
+    
+    // Download any not yet cached
+    let count = 0;
+    for (const bk of allBooks) {
+      if (!isBookOfflineCached(bk.id)) {
+        await downloadBookForOffline(bk);
+        count++;
+      }
+    }
+    await refreshStorageEstimate();
+    addNotification(
+      'Todos os Livros Fixados em Cache 📌',
+      `${allBooks.length} livro(s) da tua biblioteca estão configurados para acesso offline permanente (${count} descarregado(s) agora).`,
+      'system'
+    );
   };
 
   // Reading Progress Engine
@@ -876,6 +1099,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isUpdatingFromRemote = useRef(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
+  const [syncHistory, setSyncHistory] = useState<SyncHistoryEntry[]>(() => getSyncHistory());
+
+  const refreshSyncHistory = () => {
+    setSyncHistory(getSyncHistory());
+  };
+
+  const clearSyncHistoryLog = () => {
+    clearSyncHistory();
+    setSyncHistory([]);
+    playSoundEffect('cart_remove');
+    triggerHapticFeedback('light');
+    addNotification('Histórico de Sincronização Limpo', 'Todos os registos locais de sincronização foram removidos.', 'system');
+  };
 
   // Test connection to Firestore on boot
   useEffect(() => {
@@ -987,6 +1223,639 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Force Manual Upload to Cloud (Local -> Firestore)
+  const forceUploadToCloud = async (): Promise<{ success: boolean; message: string; details?: any }> => {
+    if (!currentUser || !currentUser.email) {
+      addNotification('Sincronização na Nuvem', 'Inicia sessão para enviar dados para o Firestore.', 'system');
+      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    }
+    const startTime = performance.now();
+    setCloudSyncStatus('syncing');
+    try {
+      const purchasedIds = currentUser.purchasedBookIds || [];
+      const favIds = favoriteBookIds || [];
+      const progMap = readingProgressMap || {};
+      const bkmks = bookmarks || [];
+      const hlights = highlights || [];
+      const totalEntities = purchasedIds.length + favIds.length + Object.keys(progMap).length + bkmks.length + hlights.length;
+
+      await syncUserDataToFirestore({
+        id: currentUser.email,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: purchasedIds,
+        favoriteBookIds: favIds,
+        readingProgressMap: progMap,
+        bookmarks: bkmks,
+        highlights: hlights
+      });
+
+      const durationMs = Math.round(performance.now() - startTime);
+      const newEntry = logSyncEvent({
+        action: 'upload',
+        status: 'success',
+        direction: 'local_to_cloud',
+        summary: `Upload manual de ${totalEntities} itens para a nuvem Firestore`,
+        userEmail: currentUser.email,
+        details: {
+          purchasedCount: purchasedIds.length,
+          favoritesCount: favIds.length,
+          progressCount: Object.keys(progMap).length,
+          bookmarksCount: bkmks.length,
+          highlightsCount: hlights.length,
+          offlinePinnedCount: pinnedOfflineBookIds.length,
+          durationMs,
+          totalEntities
+        }
+      });
+
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('synced');
+      setLastSyncedAt(new Date());
+
+      playSoundEffect('success');
+      triggerHapticFeedback('medium');
+      addNotification(
+        'Upload Manual Concluído ☁️⬆️',
+        `${totalEntities} entidades sincronizadas com sucesso para o Firestore em ${formatDurationMs(durationMs)}.`,
+        'system'
+      );
+
+      return {
+        success: true,
+        message: 'Upload manual para o Firestore concluído com sucesso!',
+        details: newEntry.details
+      };
+    } catch (err: any) {
+      const durationMs = Math.round(performance.now() - startTime);
+      logSyncEvent({
+        action: 'upload',
+        status: 'failed',
+        direction: 'local_to_cloud',
+        summary: 'Falha no upload manual para o Firestore',
+        userEmail: currentUser.email,
+        details: {
+          durationMs,
+          error: err?.message || 'Erro desconhecido ao comunicar com o Firestore'
+        }
+      });
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('error');
+      addNotification('Erro no Upload', err?.message || 'Não foi possível enviar dados para o Firestore.', 'system');
+      return {
+        success: false,
+        message: err?.message || 'Falha ao sincronizar com o Firestore.'
+      };
+    }
+  };
+
+  // Force Manual Download from Cloud (Firestore -> Local)
+  const forceDownloadFromCloud = async (): Promise<{ success: boolean; message: string; details?: any }> => {
+    if (!currentUser || !currentUser.email) {
+      addNotification('Sincronização na Nuvem', 'Inicia sessão para descarregar dados da nuvem.', 'system');
+      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    }
+    const startTime = performance.now();
+    setCloudSyncStatus('syncing');
+    try {
+      const remoteData = await fetchUserDataFromFirestore(currentUser.email);
+      const durationMs = Math.round(performance.now() - startTime);
+
+      if (!remoteData) {
+        logSyncEvent({
+          action: 'download',
+          status: 'warning',
+          direction: 'cloud_to_local',
+          summary: 'Download executado, mas nenhum documento encontrado no Firestore',
+          userEmail: currentUser.email,
+          details: { durationMs }
+        });
+        setSyncHistory(getSyncHistory());
+        setCloudSyncStatus('synced');
+        addNotification('Aviso da Nuvem', 'Nenhum dado remoto registado no Firestore para esta conta.', 'system');
+        return {
+          success: false,
+          message: 'Nenhum dado remoto registado para esta conta no Firestore.'
+        };
+      }
+
+      isUpdatingFromRemote.current = true;
+
+      if (remoteData.favoriteBookIds && Array.isArray(remoteData.favoriteBookIds)) {
+        setFavoriteBookIds(remoteData.favoriteBookIds);
+        try {
+          localStorage.setItem('zolabooks_favorites', JSON.stringify(remoteData.favoriteBookIds));
+        } catch (e) {}
+      }
+
+      if (remoteData.purchasedBookIds && Array.isArray(remoteData.purchasedBookIds)) {
+        setCurrentUser(prev => ({
+          ...prev,
+          purchasedBookIds: Array.from(new Set([...prev.purchasedBookIds, ...remoteData.purchasedBookIds]))
+        }));
+      }
+
+      if (remoteData.readingProgressMap && typeof remoteData.readingProgressMap === 'object') {
+        setReadingProgressMap(remoteData.readingProgressMap);
+        try {
+          localStorage.setItem('zolabooks_reading_progress_v1', JSON.stringify(remoteData.readingProgressMap));
+        } catch (e) {}
+      }
+
+      if (remoteData.bookmarks && Array.isArray(remoteData.bookmarks)) {
+        setBookmarks(remoteData.bookmarks);
+        try {
+          localStorage.setItem('zolabooks_bookmarks_v2', JSON.stringify(remoteData.bookmarks));
+        } catch (e) {}
+      }
+
+      if (remoteData.highlights && Array.isArray(remoteData.highlights)) {
+        setHighlights(remoteData.highlights);
+        try {
+          localStorage.setItem('zolabooks_highlights_v1', JSON.stringify(remoteData.highlights));
+        } catch (e) {}
+      }
+
+      const purchasedCount = (remoteData.purchasedBookIds || []).length;
+      const favoritesCount = (remoteData.favoriteBookIds || []).length;
+      const progressCount = Object.keys(remoteData.readingProgressMap || {}).length;
+      const bookmarksCount = (remoteData.bookmarks || []).length;
+      const highlightsCount = (remoteData.highlights || []).length;
+      const totalEntities = purchasedCount + favoritesCount + progressCount + bookmarksCount + highlightsCount;
+
+      const newEntry = logSyncEvent({
+        action: 'download',
+        status: 'success',
+        direction: 'cloud_to_local',
+        summary: `Download manual de ${totalEntities} itens da nuvem Firestore`,
+        userEmail: currentUser.email,
+        details: {
+          purchasedCount,
+          favoritesCount,
+          progressCount,
+          bookmarksCount,
+          highlightsCount,
+          durationMs,
+          totalEntities,
+          remoteLastModified: remoteData.lastSyncedAt || new Date().toISOString()
+        }
+      });
+
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('synced');
+      setLastSyncedAt(new Date());
+
+      setTimeout(() => {
+        isUpdatingFromRemote.current = false;
+      }, 300);
+
+      playSoundEffect('success');
+      triggerHapticFeedback('medium');
+      addNotification(
+        'Download da Nuvem Concluído ☁️⬇️',
+        `${totalEntities} entidades descarregadas e aplicadas do Firestore em ${formatDurationMs(durationMs)}.`,
+        'system'
+      );
+
+      return {
+        success: true,
+        message: 'Download da nuvem aplicado com sucesso!',
+        details: newEntry.details
+      };
+    } catch (err: any) {
+      const durationMs = Math.round(performance.now() - startTime);
+      logSyncEvent({
+        action: 'download',
+        status: 'failed',
+        direction: 'cloud_to_local',
+        summary: 'Falha no download manual do Firestore',
+        userEmail: currentUser.email,
+        details: {
+          durationMs,
+          error: err?.message || 'Erro desconhecido ao descarregar do Firestore'
+        }
+      });
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('error');
+      addNotification('Erro no Download', err?.message || 'Não foi possível descarregar do Firestore.', 'system');
+      return {
+        success: false,
+        message: err?.message || 'Falha ao descarregar do Firestore.'
+      };
+    }
+  };
+
+  // Force Bidirectional Sync (Fetch Remote -> Merge -> Push Snapshot)
+  const forceBidirectionalSync = async (): Promise<{ success: boolean; message: string; details?: any }> => {
+    if (!currentUser || !currentUser.email) {
+      addNotification('Sincronização na Nuvem', 'Inicia sessão para sincronizar dispositivos.', 'system');
+      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    }
+    const startTime = performance.now();
+    setCloudSyncStatus('syncing');
+    try {
+      const remoteData = await fetchUserDataFromFirestore(currentUser.email);
+
+      // Merge purchased books
+      const mergedPurchased = Array.from(new Set([
+        ...(currentUser.purchasedBookIds || []),
+        ...(remoteData?.purchasedBookIds || [])
+      ]));
+
+      // Merge favorites
+      const mergedFavorites = Array.from(new Set([
+        ...(favoriteBookIds || []),
+        ...(remoteData?.favoriteBookIds || [])
+      ]));
+
+      // Merge reading progress taking the latest timestamp
+      const mergedProgress: Record<string, BookProgress> = { ...(readingProgressMap || {}) };
+      if (remoteData?.readingProgressMap) {
+        Object.entries(remoteData.readingProgressMap).forEach(([bId, rProg]) => {
+          const lProg = mergedProgress[bId];
+          if (!lProg || !lProg.lastReadAt || (rProg.lastReadAt && new Date(rProg.lastReadAt) >= new Date(lProg.lastReadAt))) {
+            mergedProgress[bId] = rProg;
+          }
+        });
+      }
+
+      // Merge bookmarks
+      const bkmkMap = new Map<string, Bookmark>();
+      (bookmarks || []).forEach(b => bkmkMap.set(b.id, b));
+      (remoteData?.bookmarks || []).forEach(b => bkmkMap.set(b.id, b));
+      const mergedBookmarks = Array.from(bkmkMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Merge highlights
+      const hlMap = new Map<string, Highlight>();
+      (highlights || []).forEach(h => hlMap.set(h.id, h));
+      (remoteData?.highlights || []).forEach(h => hlMap.set(h.id, h));
+      const mergedHighlights = Array.from(hlMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Apply locally
+      isUpdatingFromRemote.current = true;
+      setCurrentUser(prev => ({ ...prev, purchasedBookIds: mergedPurchased }));
+      setFavoriteBookIds(mergedFavorites);
+      setReadingProgressMap(mergedProgress);
+      setBookmarks(mergedBookmarks);
+      setHighlights(mergedHighlights);
+
+      try {
+        localStorage.setItem('zolabooks_favorites', JSON.stringify(mergedFavorites));
+        localStorage.setItem('zolabooks_reading_progress_v1', JSON.stringify(mergedProgress));
+        localStorage.setItem('zolabooks_bookmarks_v2', JSON.stringify(mergedBookmarks));
+        localStorage.setItem('zolabooks_highlights_v1', JSON.stringify(mergedHighlights));
+      } catch (e) {}
+
+      // Push reconciled snapshot back to Firestore
+      await syncUserDataToFirestore({
+        id: currentUser.email,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: mergedPurchased,
+        favoriteBookIds: mergedFavorites,
+        readingProgressMap: mergedProgress,
+        bookmarks: mergedBookmarks,
+        highlights: mergedHighlights
+      });
+
+      const durationMs = Math.round(performance.now() - startTime);
+      const totalEntities = mergedPurchased.length + mergedFavorites.length + Object.keys(mergedProgress).length + mergedBookmarks.length + mergedHighlights.length;
+
+      const newEntry = logSyncEvent({
+        action: 'bidirectional',
+        status: 'success',
+        direction: 'bidirectional',
+        summary: `Sincronização bidirecional de ${totalEntities} itens concluída com reconciliação`,
+        userEmail: currentUser.email,
+        details: {
+          purchasedCount: mergedPurchased.length,
+          favoritesCount: mergedFavorites.length,
+          progressCount: Object.keys(mergedProgress).length,
+          bookmarksCount: mergedBookmarks.length,
+          highlightsCount: mergedHighlights.length,
+          offlinePinnedCount: pinnedOfflineBookIds.length,
+          durationMs,
+          totalEntities
+        }
+      });
+
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('synced');
+      setLastSyncedAt(new Date());
+
+      setTimeout(() => {
+        isUpdatingFromRemote.current = false;
+      }, 300);
+
+      playSoundEffect('success');
+      triggerHapticFeedback('medium');
+      addNotification(
+        'Sincronização Bidirecional Concluída 🔄',
+        `${totalEntities} entidades harmonizadas entre o dispositivo e a nuvem em ${formatDurationMs(durationMs)}.`,
+        'system'
+      );
+
+      return {
+        success: true,
+        message: 'Sincronização bidirecional concluída com sucesso!',
+        details: newEntry.details
+      };
+    } catch (err: any) {
+      const durationMs = Math.round(performance.now() - startTime);
+      logSyncEvent({
+        action: 'bidirectional',
+        status: 'failed',
+        direction: 'bidirectional',
+        summary: 'Falha na sincronização bidirecional do Firestore',
+        userEmail: currentUser.email,
+        details: {
+          durationMs,
+          error: err?.message || 'Erro desconhecido na sincronização bidirecional'
+        }
+      });
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('error');
+      addNotification('Erro de Sincronização', err?.message || 'Falha ao sincronizar bidirecionalmente.', 'system');
+      return {
+        success: false,
+        message: err?.message || 'Falha ao sincronizar.'
+      };
+    }
+  };
+
+  // Test Cloud Connection with latency benchmark
+  const testCloudConnection = async (): Promise<{ success: boolean; latencyMs: number; message: string }> => {
+    const startTime = performance.now();
+    try {
+      const connected = await testFirestoreConnection();
+      const latencyMs = Math.round(performance.now() - startTime);
+
+      if (connected) {
+        logSyncEvent({
+          action: 'test_connection',
+          status: 'success',
+          direction: 'diagnostic',
+          summary: `Ligação ao Firestore validada com sucesso (${latencyMs} ms)`,
+          userEmail: currentUser?.email,
+          details: { durationMs: latencyMs }
+        });
+        setSyncHistory(getSyncHistory());
+        setCloudSyncStatus('synced');
+        return {
+          success: true,
+          latencyMs,
+          message: `Ligação ao Firestore ativa e estável (${latencyMs} ms de latência).`
+        };
+      } else {
+        logSyncEvent({
+          action: 'test_connection',
+          status: 'failed',
+          direction: 'diagnostic',
+          summary: `Sem resposta do Firestore (${latencyMs} ms)`,
+          userEmail: currentUser?.email,
+          details: { durationMs: latencyMs }
+        });
+        setSyncHistory(getSyncHistory());
+        setCloudSyncStatus('offline');
+        return {
+          success: false,
+          latencyMs,
+          message: 'Não foi possível alcançar o Firestore. Verifica a tua ligação à Internet.'
+        };
+      }
+    } catch (err: any) {
+      const latencyMs = Math.round(performance.now() - startTime);
+      logSyncEvent({
+        action: 'test_connection',
+        status: 'failed',
+        direction: 'diagnostic',
+        summary: `Erro no teste de ligação: ${err?.message || 'Falha de rede'}`,
+        userEmail: currentUser?.email,
+        details: { durationMs: latencyMs, error: err?.message }
+      });
+      setSyncHistory(getSyncHistory());
+      setCloudSyncStatus('error');
+      return {
+        success: false,
+        latencyMs,
+        message: err?.message || 'Erro ao testar ligação ao Firestore.'
+      };
+    }
+  };
+
+  // Preview Remote Data without applying it directly
+  const getRemoteSyncDataPreview = async (): Promise<UserSyncData | null> => {
+    if (!currentUser?.email) return null;
+    try {
+      return await fetchUserDataFromFirestore(currentUser.email);
+    } catch (e) {
+      console.warn('Erro ao obter pré-visualização dos dados remotos:', e);
+      return null;
+    }
+  };
+
+  // Export User Security Backup to .json file
+  const exportUserDataBackup = () => {
+    try {
+      const backupData: UserSecurityBackup = {
+        appName: 'Zola Books',
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        user: {
+          id: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email
+        },
+        data: {
+          readingProgressMap: readingProgressMap || {},
+          bookmarks: bookmarks || [],
+          highlights: highlights || [],
+          favoriteBookIds: favoriteBookIds || [],
+          purchasedBookIds: currentUser.purchasedBookIds || []
+        },
+        stats: {
+          booksWithProgressCount: Object.keys(readingProgressMap || {}).length,
+          bookmarksCount: (bookmarks || []).length,
+          highlightsCount: (highlights || []).length,
+          favoritesCount: (favoriteBookIds || []).length,
+          purchasedCount: (currentUser.purchasedBookIds || []).length
+        }
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeName = (currentUser.name || 'leitor').toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `zolabooks_backup_${safeName}_${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      playSoundEffect('notification');
+      triggerHapticFeedback('light');
+
+      addNotification(
+        'Backup de Segurança Exportado 💾',
+        `Ficheiro .json descarregado com sucesso! Contém ${Object.keys(readingProgressMap || {}).length} progressos de leitura, ${(bookmarks || []).length} marcadores e ${(highlights || []).length} destaques.`
+      );
+    } catch (err) {
+      console.error('Erro ao exportar backup:', err);
+      addNotification('Erro no Backup', 'Não foi possível gerar o ficheiro de backup .json.', 'system');
+    }
+  };
+
+  // Import User Security Backup from .json
+  const importUserDataBackup = async (backupInput: string | object): Promise<{
+    success: boolean;
+    progressCount: number;
+    bookmarksCount: number;
+    highlightsCount: number;
+    message: string;
+  }> => {
+    try {
+      let parsed: any;
+      if (typeof backupInput === 'string') {
+        parsed = JSON.parse(backupInput);
+      } else {
+        parsed = backupInput;
+      }
+
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Ficheiro de backup inválido ou vazio.');
+      }
+
+      // Support both structured backup { data: { ... } } and flat backup { readingProgressMap, ... }
+      const payload = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      const importedProgress: Record<string, BookProgress> = payload.readingProgressMap && typeof payload.readingProgressMap === 'object' ? payload.readingProgressMap : {};
+      const importedBookmarks: Bookmark[] = Array.isArray(payload.bookmarks) ? payload.bookmarks : [];
+      const importedHighlights: Highlight[] = Array.isArray(payload.highlights) ? payload.highlights : [];
+      const importedFavorites: string[] = Array.isArray(payload.favoriteBookIds) ? payload.favoriteBookIds : [];
+      const importedPurchased: string[] = Array.isArray(payload.purchasedBookIds) ? payload.purchasedBookIds : [];
+
+      let mergedProgress: Record<string, BookProgress> = { ...readingProgressMap };
+      let mergedBookmarks: Bookmark[] = [...bookmarks];
+      let mergedHighlights: Highlight[] = [...highlights];
+
+      // Merge reading progress
+      if (Object.keys(importedProgress).length > 0) {
+        mergedProgress = { ...readingProgressMap, ...importedProgress };
+        setReadingProgressMap(mergedProgress);
+        try {
+          localStorage.setItem('zolabooks_reading_progress_v1', JSON.stringify(mergedProgress));
+        } catch (e) {
+          console.warn('Erro ao guardar progresso no localStorage:', e);
+        }
+      }
+
+      // Merge bookmarks by ID
+      if (importedBookmarks.length > 0) {
+        const map = new Map<string, Bookmark>();
+        bookmarks.forEach(b => map.set(b.id, b));
+        importedBookmarks.forEach(b => {
+          if (b && b.id) map.set(b.id, b);
+        });
+        mergedBookmarks = Array.from(map.values()).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setBookmarks(mergedBookmarks);
+        try {
+          localStorage.setItem('zolabooks_bookmarks_v2', JSON.stringify(mergedBookmarks));
+        } catch (e) {
+          console.warn('Erro ao guardar marcadores no localStorage:', e);
+        }
+      }
+
+      // Merge highlights by ID
+      if (importedHighlights.length > 0) {
+        const map = new Map<string, Highlight>();
+        highlights.forEach(h => map.set(h.id, h));
+        importedHighlights.forEach(h => {
+          if (h && h.id) map.set(h.id, h);
+        });
+        mergedHighlights = Array.from(map.values()).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setHighlights(mergedHighlights);
+        try {
+          localStorage.setItem('zolabooks_highlights_v1', JSON.stringify(mergedHighlights));
+        } catch (e) {
+          console.warn('Erro ao guardar realces no localStorage:', e);
+        }
+      }
+
+      // Merge Favorites
+      if (importedFavorites.length > 0) {
+        const updatedFavs = Array.from(new Set([...favoriteBookIds, ...importedFavorites]));
+        setFavoriteBookIds(updatedFavs);
+        try {
+          localStorage.setItem('zolabooks_favorites', JSON.stringify(updatedFavs));
+        } catch (e) {}
+      }
+
+      // Merge Purchased books
+      if (importedPurchased.length > 0) {
+        setCurrentUser(prev => ({
+          ...prev,
+          purchasedBookIds: Array.from(new Set([...prev.purchasedBookIds, ...importedPurchased]))
+        }));
+      }
+
+      // Trigger instant push to Firestore if user is logged in
+      if (currentUser?.email) {
+        try {
+          setCloudSyncStatus('syncing');
+          await syncUserDataToFirestore({
+            id: currentUser.email,
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role,
+            purchasedBookIds: Array.from(new Set([...(currentUser.purchasedBookIds || []), ...importedPurchased])),
+            favoriteBookIds: Array.from(new Set([...(favoriteBookIds || []), ...importedFavorites])),
+            readingProgressMap: mergedProgress,
+            bookmarks: mergedBookmarks,
+            highlights: mergedHighlights
+          });
+          setCloudSyncStatus('synced');
+          setLastSyncedAt(new Date());
+        } catch (syncErr) {
+          console.warn('Sincronização Firestore pós-backup em modo offline:', syncErr);
+        }
+      }
+
+      playSoundEffect('success');
+      triggerHapticFeedback('medium');
+
+      const progressCount = Object.keys(importedProgress).length;
+      const bookmarksCount = importedBookmarks.length;
+      const highlightsCount = importedHighlights.length;
+
+      addNotification(
+        'Backup Restaurado com Sucesso! 📥',
+        `Importados ${progressCount} progressos de leitura, ${bookmarksCount} marcadores e ${highlightsCount} destaques com sincronização ativa.`
+      );
+
+      return {
+        success: true,
+        progressCount,
+        bookmarksCount,
+        highlightsCount,
+        message: 'Backup restaurado com sucesso!'
+      };
+    } catch (err: any) {
+      console.error('Erro ao importar backup:', err);
+      addNotification('Falha ao Importar Backup', err?.message || 'Ficheiro de backup corrompido ou formato não suportado.', 'system');
+      return {
+        success: false,
+        progressCount: 0,
+        bookmarksCount: 0,
+        highlightsCount: 0,
+        message: err?.message || 'Erro ao processar ficheiro de backup.'
+      };
+    }
+  };
+
   // Firestore Real-time synchronization
   useEffect(() => {
     if (!currentUser || !currentUser.email) return;
@@ -1095,7 +1964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const apiBooks = await api.getBooks();
       if (apiBooks && apiBooks.length > 0) {
-        setBooks(apiBooks);
+        setBooks(deduplicateBooks(apiBooks));
       }
     } catch (e) {
       console.log('Mantendo catálogo local.');
@@ -1467,23 +2336,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // User purchased books list (including uploaded EPUBs and active temporary test pass)
-  const purchasedBooks = [
-    ...customEpubBooks,
-    ...books.filter(b => {
-      if (currentUser.purchasedBookIds.includes(b.id) || b.isFree) return true;
-      if (activeTestPass) {
-        if (!activeTestPass.bookId || activeTestPass.bookId === 'all' || activeTestPass.bookId === b.id) {
-          return true;
+  const purchasedBooks = useMemo(() => {
+    return deduplicateBooks([
+      ...customEpubBooks,
+      ...books.filter(b => {
+        if (currentUser.purchasedBookIds.includes(b.id) || b.isFree) return true;
+        if (activeTestPass) {
+          if (!activeTestPass.bookId || activeTestPass.bookId === 'all' || activeTestPass.bookId === b.id) {
+            return true;
+          }
         }
-      }
+        return false;
+      })
+    ]);
+  }, [customEpubBooks, books, currentUser.purchasedBookIds, activeTestPass]);
+
+  // Direct 1-Click Free Book Claim to User's Library
+  const claimFreeBook = async (book: Book): Promise<boolean> => {
+    if (!book || !book.id) return false;
+
+    // Prompt authentication if not logged in
+    if (!requireAuth(`adicionar o e-book gratuito "${book.title}" à tua biblioteca permanente`, () => claimFreeBook(book))) {
       return false;
-    })
-  ];
+    }
+
+    // Check if already claimed / present in user list
+    if (currentUser.purchasedBookIds.includes(book.id)) {
+      addNotification(
+        'E-book já na Biblioteca 📚',
+        `"${book.title}" já faz parte da tua biblioteca permanente. Podes abri-lo para leitura a qualquer momento.`
+      );
+      return true;
+    }
+
+    const updatedPurchasedIds = [book.id, ...currentUser.purchasedBookIds];
+    const updatedUser: User = {
+      ...currentUser,
+      purchasedBookIds: updatedPurchasedIds
+    };
+
+    setCurrentUser(updatedUser);
+    setUsersList(prev => prev.map(u => (u.id === currentUser.id ? updatedUser : u)));
+
+    // Sync directly to Firestore
+    try {
+      await syncUserDataToFirestore({
+        id: currentUser.email,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: updatedPurchasedIds,
+        favoriteBookIds: favoriteBookIds,
+        readingProgressMap: readingProgressMap,
+        bookmarks: bookmarks,
+        highlights: highlights
+      });
+    } catch (e) {
+      console.warn('Erro ao sincronizar aquisição de livro gratuito no Firestore:', e);
+    }
+
+    // Sensory Feedback: Sound & Haptic
+    playSoundEffect('success');
+    triggerHapticFeedback('medium');
+
+    // In-App Notification
+    addNotification(
+      'Livro Gratuito Adicionado! 🎉',
+      `"${book.title}" foi adicionado com sucesso à tua biblioteca pessoal. Podes ler agora sem restrições ou custos!`,
+      'promotion'
+    );
+
+    return true;
+  };
 
   // Add new book to catalog
   const addBookToCatalog = async (newBookData: Partial<Book>): Promise<Book> => {
     const created = await api.createBook(newBookData);
-    setBooks(prev => [created, ...prev]);
+    setBooks(prev => deduplicateBooks([created, ...prev]));
 
     const authorName = created.author || 'Autor Zola';
 
@@ -1510,6 +2439,156 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return created;
   };
 
+  // Seller Sales & Real-time Notification Management
+  const clearLatestSellerSalePush = () => {
+    setLatestSellerSalePush(null);
+  };
+
+  const markSellerSaleAsRead = (saleId: string) => {
+    setSellerSales(prev => prev.map(s => (s.id === saleId ? { ...s, read: true } : s)));
+  };
+
+  const clearAllSellerSales = () => {
+    setSellerSales([]);
+    try {
+      localStorage.removeItem('zolabooks_seller_sales');
+    } catch {
+      // ignore
+    }
+  };
+
+  const triggerSellerSaleNotification = (
+    saleData: Partial<SellerSaleNotification> & { bookId: string; bookTitle: string; amountAOA: number; amountUSD: number }
+  ): SellerSaleNotification => {
+    const nowObj = new Date();
+    const formattedDate = `${String(nowObj.getDate()).padStart(2, '0')}/${String(nowObj.getMonth() + 1).padStart(2, '0')}/${nowObj.getFullYear()}`;
+    const formattedTime = nowObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const matchingBook = books.find(b => b.id === saleData.bookId);
+
+    const newSale: SellerSaleNotification = {
+      id: saleData.id || `SALE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      orderId: saleData.orderId || `ZB-ORD-${Math.floor(10000 + Math.random() * 90000)}`,
+      bookId: saleData.bookId,
+      bookTitle: saleData.bookTitle,
+      bookCover: saleData.bookCover || matchingBook?.coverImage,
+      author: saleData.author || matchingBook?.author || 'Autor Zola',
+      sellerId: saleData.sellerId || matchingBook?.sellerId || currentUser.id,
+      sellerName: saleData.sellerName || matchingBook?.publisher || currentUser.name,
+      amountAOA: saleData.amountAOA,
+      amountUSD: saleData.amountUSD,
+      currencyPaid: saleData.currencyPaid || 'AOA',
+      amountPaid: saleData.amountPaid ?? saleData.amountAOA,
+      buyerName: saleData.buyerName || 'Leitor Zola Books',
+      buyerEmail: saleData.buyerEmail || 'leitor@zolabooks.ao',
+      date: saleData.date || formattedDate,
+      time: saleData.time || formattedTime,
+      timestamp: nowObj.toISOString(),
+      paymentMethod: saleData.paymentMethod || 'multicaixa_express',
+      paymentStatus: saleData.paymentStatus || 'completed',
+      paymentReference: saleData.paymentReference || `MCX-${Math.floor(1000000 + Math.random() * 9000000)}-AO`,
+      read: false,
+      notifiedAt: nowObj.toISOString()
+    };
+
+    setSellerSales(prev => [newSale, ...prev]);
+    setLatestSellerSalePush(newSale);
+    playSoundEffect('sale');
+    triggerHapticFeedback('success');
+
+    // Add to unified notifications for the top bell
+    addNotification(
+      `🎉 Nova Venda: "${newSale.bookTitle}"`,
+      `Venda de ${formatPrice(newSale.amountAOA, newSale.amountUSD)} recebida de ${newSale.buyerName}. Estado: ${newSale.paymentStatus === 'completed' ? 'Confirmado' : 'Pendente'}.`,
+      'royalties'
+    );
+
+    return newSale;
+  };
+
+  const simulateTestSellerSale = (targetBookId?: string): SellerSaleNotification => {
+    const chosenBook = (targetBookId ? books.find(b => b.id === targetBookId) : null) || 
+      books.find(b => b.author.toLowerCase().includes(currentUser.name.toLowerCase()) || b.sellerId === currentUser.id) ||
+      books[0] || 
+      MOCK_BOOKS[0];
+
+    const testBuyers = [
+      { name: 'Kalandula Manuel Neto', email: 'kalandula.neto@angola.ao' },
+      { name: 'Esperança Luísa Benguela', email: 'esperanca.leitora@gmail.com' },
+      { name: 'Sérgio António da Silva', email: 'sergio.silva@luandabooks.ao' },
+      { name: 'Maria Inês Ferreira', email: 'maria.ines.leitora@globalbooks.com' },
+      { name: 'John Miller (EUA)', email: 'john.reader@international.com' }
+    ];
+    const randomBuyer = testBuyers[Math.floor(Math.random() * testBuyers.length)];
+    const orderId = `ZB-ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const nowObj = new Date();
+    const formattedDate = `${String(nowObj.getDate()).padStart(2, '0')}/${String(nowObj.getMonth() + 1).padStart(2, '0')}/${nowObj.getFullYear()}`;
+    const formattedTime = nowObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const newSaleNotif: SellerSaleNotification = {
+      id: `SALE-SIM-${Date.now()}`,
+      orderId,
+      bookId: chosenBook.id,
+      bookTitle: chosenBook.title,
+      bookCover: chosenBook.coverImage,
+      author: chosenBook.author,
+      sellerId: chosenBook.sellerId || currentUser.id,
+      sellerName: chosenBook.publisher || currentUser.name,
+      amountAOA: chosenBook.priceAOA,
+      amountUSD: chosenBook.priceUSD,
+      currencyPaid: 'AOA',
+      amountPaid: chosenBook.priceAOA,
+      buyerName: randomBuyer.name,
+      buyerEmail: randomBuyer.email,
+      date: formattedDate,
+      time: formattedTime,
+      timestamp: nowObj.toISOString(),
+      paymentMethod: 'multicaixa_express',
+      paymentStatus: 'completed',
+      paymentReference: `MCX-${Math.floor(1000000 + Math.random() * 9000000)}-AO`,
+      read: false,
+      notifiedAt: nowObj.toISOString()
+    };
+
+    // Also add simulated order to orders state so it is 100% synchronized
+    const simOrder: Order = {
+      id: orderId,
+      userId: `ZB-USR-TEST-${Math.floor(100 + Math.random() * 900)}`,
+      userName: randomBuyer.name,
+      userEmail: randomBuyer.email,
+      items: [{
+        bookId: chosenBook.id,
+        bookTitle: chosenBook.title,
+        price: chosenBook.priceAOA,
+        currency: 'AOA'
+      }],
+      totalAOA: chosenBook.priceAOA,
+      totalUSD: chosenBook.priceUSD,
+      currencyPaid: 'AOA',
+      amountPaid: chosenBook.priceAOA,
+      paymentMethod: 'multicaixa_express',
+      paymentStatus: 'completed',
+      paymentReference: newSaleNotif.paymentReference,
+      discountAmount: 0,
+      createdAt: `${formattedDate} ${formattedTime}`,
+      downloadToken: `TOK-${Math.floor(100000 + Math.random() * 900000)}`
+    };
+
+    setOrders(prev => [simOrder, ...prev]);
+    setSellerSales(prev => [newSaleNotif, ...prev]);
+    setLatestSellerSalePush(newSaleNotif);
+    playSoundEffect('sale');
+    triggerHapticFeedback('success');
+
+    addNotification(
+      `🎉 Nova Venda Confirmada: "${chosenBook.title}"`,
+      `Venda de ${formatPrice(chosenBook.priceAOA, chosenBook.priceUSD)} efetuada para ${randomBuyer.name} via Multicaixa Express. Registada no Painel do Vendedor.`,
+      'royalties'
+    );
+
+    return newSaleNotif;
+  };
+
   // Create Order & process
   const createNewOrder = async (orderData: Partial<Order>): Promise<Order> => {
     const createdOrder = await api.createOrder(orderData);
@@ -1525,6 +2604,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         price: i.price
       }))
     });
+
+    // Generate real-time seller sale notifications for every book in the order
+    const nowObj = new Date();
+    const formattedDate = `${String(nowObj.getDate()).padStart(2, '0')}/${String(nowObj.getMonth() + 1).padStart(2, '0')}/${nowObj.getFullYear()}`;
+    const formattedTime = nowObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const newSalesForSellers: SellerSaleNotification[] = createdOrder.items.map((item, idx) => {
+      const matchingBook = books.find(b => b.id === item.bookId);
+      const calculatedAOA = createdOrder.currencyPaid === 'AOA' ? item.price : Math.round(item.price * 930);
+      const calculatedUSD = createdOrder.currencyPaid === 'USD' ? item.price : Number((item.price / 930).toFixed(2));
+
+      return {
+        id: `SALE-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+        orderId: createdOrder.id,
+        bookId: item.bookId,
+        bookTitle: item.bookTitle,
+        bookCover: matchingBook?.coverImage,
+        author: matchingBook?.author || 'Autor Zola Books',
+        sellerId: matchingBook?.sellerId,
+        sellerName: matchingBook?.publisher || matchingBook?.author || 'Editora Parceira Zola',
+        amountAOA: calculatedAOA,
+        amountUSD: calculatedUSD,
+        currencyPaid: createdOrder.currencyPaid,
+        amountPaid: item.price,
+        buyerName: createdOrder.userName,
+        buyerEmail: createdOrder.userEmail,
+        date: formattedDate,
+        time: formattedTime,
+        timestamp: nowObj.toISOString(),
+        paymentMethod: createdOrder.paymentMethod,
+        paymentStatus: createdOrder.paymentStatus,
+        paymentReference: createdOrder.paymentReference,
+        read: false,
+        notifiedAt: nowObj.toISOString()
+      };
+    });
+
+    if (newSalesForSellers.length > 0) {
+      setSellerSales(prev => [...newSalesForSellers, ...prev]);
+      // Pop up the top sale
+      setLatestSellerSalePush(newSalesForSellers[0]);
+      playSoundEffect('sale');
+
+      newSalesForSellers.forEach(sale => {
+        addNotification(
+          `🎉 Nova Venda: "${sale.bookTitle}"`,
+          `Venda de ${formatPrice(sale.amountAOA, sale.amountUSD)} recebida de ${sale.buyerName} (${sale.paymentMethod.replace('_', ' ').toUpperCase()}).`,
+          'royalties'
+        );
+      });
+    }
 
     if (createdOrder.paymentStatus === 'completed') {
       // Add books to current user's purchased list
@@ -1549,6 +2679,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const approveIbanPayment = async (orderId: string) => {
     const updated = await api.approveIbanPayment(orderId);
     setOrders(prev => prev.map(o => (o.id === orderId ? updated : o)));
+
+    // Update seller sales status to completed
+    setSellerSales(prev => prev.map(s => {
+      if (s.orderId === orderId) {
+        return { ...s, paymentStatus: 'completed' };
+      }
+      return s;
+    }));
 
     // Update user if online
     if (updated.userId === currentUser.id) {
@@ -1774,6 +2912,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favoriteBookIds,
         toggleFavorite,
         purchasedBooks,
+        claimFreeBook,
         customEpubBooks,
         addCustomEpubBook,
         removeCustomEpubBook,
@@ -1816,10 +2955,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTestPass,
         isReadingReportModalOpen,
         setIsReadingReportModalOpen,
+        isDeviceSyncModalOpen,
+        setIsDeviceSyncModalOpen,
 
         orders,
         createNewOrder,
         approveIbanPayment,
+
+        sellerSales,
+        latestSellerSalePush,
+        clearLatestSellerSalePush,
+        triggerSellerSaleNotification,
+        simulateTestSellerSale,
+        markSellerSaleAsRead,
+        clearAllSellerSales,
 
         notifications,
         addNotification,
@@ -1837,6 +2986,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearAllOfflineBooks,
         isBookOfflineCached,
         isBookDownloading,
+
+        pinnedOfflineBookIds,
+        isBookPinnedOffline,
+        togglePinBookForOffline,
+        setBookPinnedOffline,
+        androidStorageSettings,
+        updateAndroidStorageSettings,
+        cleanUnpinnedOfflineCache,
+        requestDevicePersistentStorage,
+        isPersistentStorageGranted,
+        deviceStorageEstimate,
+        refreshStorageEstimate,
+        pinAndDownloadAllPurchased,
 
         bookClubs,
         joinBookClub,
@@ -1871,7 +3033,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         cloudSyncStatus,
         lastSyncedAt,
-        triggerCloudSync
+        syncHistory,
+        triggerCloudSync,
+        forceUploadToCloud,
+        forceDownloadFromCloud,
+        forceBidirectionalSync,
+        testCloudConnection,
+        clearSyncHistoryLog,
+        getRemoteSyncDataPreview,
+
+        exportUserDataBackup,
+        importUserDataBackup
       }}
     >
       {children}

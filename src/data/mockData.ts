@@ -1,4 +1,4 @@
-import { Book, User, Coupon, Review, Order } from '../types';
+import { Book, User, Coupon, Review, Order, SellerSaleNotification } from '../types';
 
 export const INITIAL_EXCHANGE_RATE = {
   // 1 USD = 930 AOA (Kwanza)
@@ -257,6 +257,72 @@ export const MOCK_BOOKS: Book[] = [
         {
           title: 'Capítulo 1: A Menina de Sangue Nobre',
           content: `No palácio do Rei Mbandi, nasceu uma menina guerreira com os olhos brilhantes como o sol do Kwanza... Seu nome ficaria gravado na história de África para sempre.`
+        }
+      ]
+    },
+    fullContent: {
+      chapters: [
+        {
+          title: 'Capítulo 1: A Menina de Sangue Nobre',
+          content: `No palácio do Rei Mbandi, nasceu uma menina guerreira com os olhos brilhantes como o sol do Kwanza... Seu nome ficaria gravado na história de África para sempre. Desde tenra idade, Njinga aprendeu a montar cavalos, manusear o arco e as flechas e a compreender a diplomacia com os emissários do além-mar.`
+        },
+        {
+          title: 'Capítulo 2: A Cadeira da Rainha',
+          content: `Na famosa reunião com o governador português em Luanda, não havia cadeira para ela se sentar. Sem hesitar, uma de suas damas de companhia ajoelhou-se para que a nobre soberana se sentasse com dignidade real, demonstrando ao mundo que o Ndongo jamais se curvaria.`
+        },
+        {
+          title: 'Capítulo 3: O Legado Eterno para as Crianças de Angola',
+          content: `A coragem e inteligência da Rainha Njinga inspiram gerações de meninas e meninos angolanos a defender a sua cultura, valorizar os estudos e construir um futuro brilhante com orgulho da nossa herança ancestral.`
+        }
+      ]
+    }
+  },
+  {
+    id: 'ZB-BK-114',
+    title: 'Contos e Provérbios de Sabedoria de Angola',
+    subtitle: 'Narrativas orais, fábulas do embondeiro e lições dos mais velhos',
+    author: 'Esperança Luísa & Coletivo Zola',
+    authorId: 'ZB-AUT-10',
+    sellerId: 'ZB-SEL-01',
+    coverImage: 'https://images.unsplash.com/photo-1476275466078-4007374efbbe?auto=format&fit=crop&w=800&q=80',
+    priceAOA: 0,
+    priceUSD: 0,
+    rating: 5.0,
+    reviewCount: 188,
+    category: 'E-books Gratuitos',
+    language: 'Português',
+    pageCount: 84,
+    publisher: 'Edições Zola Cultura Aberta',
+    publishedYear: 2026,
+    isbn: '978-9890002223',
+    description: 'Uma antologia cultural inteiramente gratuita para toda a comunidade Zola Books. Reúne contos populares passados de geração em geração à volta da fogueira, lendas sobre a Kianda e provérbios tradicionais com tradução e contexto cultural.',
+    isFeatured: true,
+    isBestseller: true,
+    isAngolanAuthor: true,
+    isFree: true,
+    fileSizeMb: 3.5,
+    tags: ['Cultura', 'Grátis', 'Contos', 'Provérbios', 'Angola', 'Tradição Oral'],
+    sampleContent: {
+      chapters: [
+        {
+          title: 'Capítulo 1: O Coelho Esperto e o Elefante',
+          content: `Na savana de Malanje, diziam os antigos que o tamanho não define a sabedoria. O pequeno coelho ensinou ao grande elefante que a paciência e a astúcia superam a força bruta...`
+        }
+      ]
+    },
+    fullContent: {
+      chapters: [
+        {
+          title: 'Capítulo 1: O Coelho Esperto e o Elefante',
+          content: `Na savana de Malanje, diziam os antigos que o tamanho não define a sabedoria. O pequeno coelho ensinou ao grande elefante que a paciência e a astúcia superam a força bruta. Quando a seca chegou, os animais reuniram-se sob o embondeiro sagrado para encontrar água.`
+        },
+        {
+          title: 'Capítulo 2: A Lenda da Kianda e a Baía de Luanda',
+          content: `Os pescadores da Ilha de Luanda sabiam que para pescar em paz era preciso respeitar as águas da Kianda, a divindade guardiã do mar. Quem cuida da natureza e partilha o peixe com o vizinho recebe em dobro a bênção das marés.`
+        },
+        {
+          title: 'Capítulo 3: Provérbios em Kimbundu e Português',
+          content: `«Mukua ngolo kalé ni kitadi, mukua manhinga uala ni muenhu» — Aquele que tem saúde e honra possui a maior riqueza da vida. A verdadeira nobreza está na humildade e no respeito aos antepassados.`
         }
       ]
     }
@@ -680,5 +746,80 @@ export const INITIAL_ORDERS: Order[] = [
     discountAmount: 0,
     createdAt: '2026-08-03 09:15',
     downloadToken: 'TOK-112233'
+  }
+];
+
+export const INITIAL_SELLER_SALES: SellerSaleNotification[] = [
+  {
+    id: 'SALE-NOTIF-101',
+    orderId: 'ZB-ORD-9001',
+    bookId: 'ZB-BK-101',
+    bookTitle: 'Luuanda',
+    bookCover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80',
+    author: 'Luandino Vieira',
+    sellerId: 'ZB-SEL-01',
+    sellerName: 'Editora Chá de Caxinde / Zola Digital',
+    amountAOA: 3500,
+    amountUSD: 3.80,
+    currencyPaid: 'AOA',
+    amountPaid: 3500,
+    buyerName: 'Abdul Aziz Senê Angolano',
+    buyerEmail: 'aseneangolano@gmail.com',
+    date: '01/08/2026',
+    time: '14:30',
+    timestamp: '2026-08-01T14:30:00Z',
+    paymentMethod: 'multicaixa_express',
+    paymentStatus: 'completed',
+    paymentReference: 'MCX-8829102-AO',
+    read: true,
+    notifiedAt: '2026-08-01T14:30:00Z'
+  },
+  {
+    id: 'SALE-NOTIF-102',
+    orderId: 'ZB-ORD-9001',
+    bookId: 'ZB-BK-102',
+    bookTitle: 'Mayombe',
+    bookCover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=800&q=80',
+    author: 'Pepetela',
+    sellerId: 'ZB-SEL-01',
+    sellerName: 'Editora Chá de Caxinde / Zola Digital',
+    amountAOA: 4200,
+    amountUSD: 4.50,
+    currencyPaid: 'AOA',
+    amountPaid: 4200,
+    buyerName: 'Abdul Aziz Senê Angolano',
+    buyerEmail: 'aseneangolano@gmail.com',
+    date: '01/08/2026',
+    time: '14:30',
+    timestamp: '2026-08-01T14:30:00Z',
+    paymentMethod: 'multicaixa_express',
+    paymentStatus: 'completed',
+    paymentReference: 'MCX-8829102-AO',
+    read: true,
+    notifiedAt: '2026-08-01T14:30:00Z'
+  },
+  {
+    id: 'SALE-NOTIF-103',
+    orderId: 'ZB-ORD-9002',
+    bookId: 'ZB-BK-101',
+    bookTitle: 'Luuanda',
+    bookCover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80',
+    author: 'Luandino Vieira',
+    sellerId: 'ZB-SEL-01',
+    sellerName: 'Editora Chá de Caxinde / Zola Digital',
+    amountAOA: 3534,
+    amountUSD: 3.80,
+    currencyPaid: 'USD',
+    amountPaid: 3.80,
+    buyerName: 'John Miller',
+    buyerEmail: 'john.reader@globalbooks.com',
+    date: '03/08/2026',
+    time: '09:15',
+    timestamp: '2026-08-03T09:15:00Z',
+    paymentMethod: 'stripe_card',
+    paymentStatus: 'completed',
+    paymentReference: 'ch_3M482910291',
+    read: false,
+    notifiedAt: '2026-08-03T09:15:00Z'
   }
 ];

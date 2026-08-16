@@ -39,13 +39,18 @@ import {
   CheckCircle,
   Bookmark,
   ArrowRight,
-  Cloud
+  Cloud,
+  Pin,
+  Smartphone
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { BookCard } from './BookCard';
 import { SocialFeed } from './SocialFeed';
 import { ReadingAnalyticsChart } from './ReadingAnalyticsChart';
 import { parseEpubFile } from '../lib/epubParser';
+import { SecurityBackupSection } from './SecurityBackupSection';
+import { OfflineCacheSettingsSection } from './OfflineCacheSettingsSection';
+import { AndroidStorageManagerSection } from './AndroidStorageManagerSection';
 
 export const CustomerDashboard: React.FC = () => {
   const {
@@ -74,6 +79,13 @@ export const CustomerDashboard: React.FC = () => {
     removeCustomEpubBook,
     setIsAccessibilityModalOpen,
     setIsReadingReportModalOpen,
+    setIsUserProfileOpen,
+    isDeviceSyncModalOpen,
+    setIsDeviceSyncModalOpen,
+    cloudSyncStatus,
+    pinnedOfflineBookIds,
+    isBookPinnedOffline,
+    togglePinBookForOffline,
     readingProgressMap,
     getBookProgress,
     bookmarks,
@@ -830,18 +842,32 @@ export const CustomerDashboard: React.FC = () => {
               </p>
             </div>
 
-            {/* Sync State Quick Legend Bar */}
+            {/* Sync State Quick Legend Bar & Storage Manager Shortcut */}
             {purchasedBooks.length > 0 && (
-              <div className="flex items-center gap-2 bg-slate-950/90 border border-slate-800 p-1.5 px-3 rounded-2xl text-[11px] font-bold text-slate-300 shrink-0">
-                <span className="text-slate-400 text-[10px] uppercase font-mono mr-1">Estado:</span>
-                <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>{purchasedBooks.filter(b => isBookOfflineCached(b.id) || customEpubBooks.some(cb => cb.id === b.id)).length} Offline</span>
-                </span>
-                <span className="flex items-center gap-1 text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20">
-                  <Cloud className="w-3 h-3 text-sky-400" />
-                  <span>{purchasedBooks.filter(b => !isBookOfflineCached(b.id) && !customEpubBooks.some(cb => cb.id === b.id)).length} Na Nuvem</span>
-                </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setIsUserProfileOpen(true)}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-purple-950/80 to-slate-900 border border-purple-500/40 hover:border-purple-400 text-purple-300 hover:text-white px-3 py-1.5 rounded-2xl text-[11px] font-extrabold transition-all shadow-md group"
+                  title="Configurar quais livros devem ser mantidos permanentemente em cache local para acesso offline no Android"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-purple-400 group-hover:scale-110 transition-transform" />
+                  <span>Cache Permanente:</span>
+                  <span className="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                    {pinnedOfflineBookIds.length} 📌
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-2 bg-slate-950/90 border border-slate-800 p-1.5 px-3 rounded-2xl text-[11px] font-bold text-slate-300 shrink-0">
+                  <span className="text-slate-400 text-[10px] uppercase font-mono mr-1">Estado:</span>
+                  <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>{purchasedBooks.filter(b => isBookOfflineCached(b.id) || customEpubBooks.some(cb => cb.id === b.id)).length} Offline</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20">
+                    <Cloud className="w-3 h-3 text-sky-400" />
+                    <span>{purchasedBooks.filter(b => !isBookOfflineCached(b.id) && !customEpubBooks.some(cb => cb.id === b.id)).length} Na Nuvem</span>
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -874,13 +900,19 @@ export const CustomerDashboard: React.FC = () => {
                           <span>A descarregar...</span>
                         </span>
                       )}
-                      {!isDownloading && isCustomEpub && (
-                        <span className="bg-purple-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-purple-400/40">
+                      {!isDownloading && isBookPinnedOffline(book.id) && (
+                        <span className="bg-purple-600 text-white font-black text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-purple-400/40">
+                          <Pin className="w-3 h-3 fill-white" />
+                          <span>Permanente 📌</span>
+                        </span>
+                      )}
+                      {!isDownloading && !isBookPinnedOffline(book.id) && isCustomEpub && (
+                        <span className="bg-purple-600/80 text-white font-black text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-purple-400/40">
                           <FileText className="w-3 h-3 text-purple-200" />
                           <span>EPUB Pessoal</span>
                         </span>
                       )}
-                      {!isDownloading && isCached && (
+                      {!isDownloading && !isBookPinnedOffline(book.id) && isCached && (
                         <span className="bg-emerald-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
                           <Zap className="w-3 h-3 text-slate-950 fill-current" />
                           <span>Cached Offline</span>
@@ -1006,31 +1038,67 @@ export const CustomerDashboard: React.FC = () => {
                           <span>A descarregar p/ Offline...</span>
                         </button>
                       ) : isCached ? (
-                        <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 p-2 rounded-xl text-xs">
-                          <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Pronto p/ Offline
-                          </span>
+                        <div className="flex items-center justify-between gap-1 bg-slate-950/80 border border-slate-800 p-1.5 rounded-xl text-xs">
+                          {/* Permanent Pin Button */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              removeBookFromOffline(book.id);
+                              togglePinBookForOffline(book.id);
                             }}
-                            className="text-slate-400 hover:text-rose-400 text-[10px] p-1 rounded transition-colors"
-                            title="Remover do Cache SW"
+                            className={`flex items-center gap-1 text-[10px] font-extrabold px-2 py-1 rounded-lg transition-all border ${
+                              isBookPinnedOffline(book.id)
+                                ? 'bg-purple-600/30 text-purple-300 border-purple-500/40'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                            }`}
+                            title={isBookPinnedOffline(book.id) ? "Desafixar de cache permanente" : "Fixar permanentemente no armazenamento interno Android"}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Pin className={`w-3 h-3 ${isBookPinnedOffline(book.id) ? 'fill-purple-300' : ''}`} />
+                            <span>{isBookPinnedOffline(book.id) ? 'Permanente 📌' : 'Fixar 📌'}</span>
                           </button>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
+                              <CheckCircle2 className="w-3 h-3" /> Offline
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeBookFromOffline(book.id);
+                              }}
+                              className="text-slate-500 hover:text-rose-400 text-[10px] p-1 rounded transition-colors"
+                              title="Remover do Cache SW"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadBookForOffline(book);
-                          }}
-                          className="w-full bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 font-bold text-[11px] py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Descarregar p/ Offline (SW)
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadBookForOffline(book);
+                            }}
+                            className="flex-1 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 font-bold text-[11px] py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Baixar Offline
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePinBookForOffline(book.id);
+                            }}
+                            className={`p-2 rounded-xl border transition-all ${
+                              isBookPinnedOffline(book.id)
+                                ? 'bg-purple-600 text-white border-purple-500'
+                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                            }`}
+                            title="Fixar permanentemente em cache local"
+                          >
+                            <Pin className={`w-3.5 h-3.5 ${isBookPinnedOffline(book.id) ? 'fill-white' : ''}`} />
+                          </button>
+                        </div>
                       )}
 
                       {isCustomEpub && (
@@ -1677,7 +1745,47 @@ export const CustomerDashboard: React.FC = () => {
       )}
 
       {activeTab === 'profile' && (
-        <div className="space-y-6 max-w-xl">
+        <div className="space-y-6 max-w-3xl">
+          {/* Cloud Synchronization Central Banner */}
+          <div className="bg-slate-900 border border-amber-500/30 p-5 rounded-3xl space-y-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-amber-500/5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold shrink-0">
+                <Cloud className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-sm text-white">Sincronização de Dispositivos (Firestore Nuvem)</h4>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    cloudSyncStatus === 'synced' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                    cloudSyncStatus === 'syncing' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+                    cloudSyncStatus === 'offline' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                    'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                  }`}>
+                    {cloudSyncStatus === 'synced' ? 'Sincronizado ☁️' :
+                     cloudSyncStatus === 'syncing' ? 'A Sincronizar...' :
+                     cloudSyncStatus === 'offline' ? 'Offline' : 'Erro'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Ver histórico de sincronização, comparar dados locais vs nuvem e forçar upload/download manual.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="dashboard-open-device-sync-btn"
+              onClick={() => setIsDeviceSyncModalOpen(true)}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shrink-0 flex items-center justify-center gap-2 self-start sm:self-center"
+            >
+              <Cloud className="w-4 h-4" />
+              <span>Gerir Sincronização 🔄</span>
+            </button>
+          </div>
+
+          {/* Android Offline Cache & Permanent Pin Configuration Section */}
+          <OfflineCacheSettingsSection />
+
           <form onSubmit={handleSaveProfile} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
             <h2 className="text-lg font-extrabold text-white">Editar Perfil do Leitor</h2>
 
@@ -1741,6 +1849,9 @@ export const CustomerDashboard: React.FC = () => {
               Configurar ⏰
             </button>
           </div>
+
+          {/* Security Backup & Disaster Recovery Card */}
+          <SecurityBackupSection />
 
           {/* Accessibility Sound Feedback Card in Profile */}
           <div className="bg-slate-900 border border-amber-500/30 p-5 rounded-3xl space-y-3 flex items-center justify-between gap-4">

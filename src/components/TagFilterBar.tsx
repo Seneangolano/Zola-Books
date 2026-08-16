@@ -13,6 +13,7 @@ export const TagFilterBar: React.FC<TagFilterBarProps> = ({ className = '', show
 
   // Highlighted quick theme tags explicitly requested or popular in Angola
   const featuredQuickTags = [
+    { name: 'Grátis', icon: '🎁' },
     { name: 'História de Angola', icon: '🇦🇴' },
     { name: 'Ficção Científica Africana', icon: '🚀' },
     { name: 'Autoajuda', icon: '💡' },

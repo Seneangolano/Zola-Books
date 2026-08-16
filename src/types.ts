@@ -189,6 +189,35 @@ export interface AppNotification {
   type: 'order' | 'system' | 'royalties' | 'promotion';
   read: boolean;
   date: string;
+  orderId?: string;
+  bookId?: string;
+  bookTitle?: string;
+  amount?: string;
+}
+
+export interface SellerSaleNotification {
+  id: string;
+  orderId: string;
+  bookId: string;
+  bookTitle: string;
+  bookCover?: string;
+  author: string;
+  sellerId?: string;
+  sellerName?: string;
+  amountAOA: number;
+  amountUSD: number;
+  currencyPaid: Currency;
+  amountPaid: number;
+  buyerName: string;
+  buyerEmail: string;
+  date: string;       // Formatted date: "15/08/2026" or "15 Ago 2026"
+  time: string;       // Formatted time: "18:09"
+  timestamp: string;  // Full ISO string
+  paymentMethod: PaymentMethod;
+  paymentStatus: 'pending' | 'completed' | 'failed' | 'awaiting_iban_proof';
+  paymentReference?: string;
+  read: boolean;
+  notifiedAt: string;
 }
 
 export interface SalesReport {
@@ -244,4 +273,56 @@ export interface BookClub {
   moderatorName: string;
   moderatorAvatar?: string;
   discussions: BookClubDiscussion[];
+}
+
+export interface UserSecurityBackup {
+  appName: string;
+  version: string;
+  exportedAt: string;
+  user: {
+    id?: string;
+    name?: string;
+    email?: string;
+  };
+  data: {
+    readingProgressMap: Record<string, BookProgress>;
+    bookmarks: Bookmark[];
+    highlights: Highlight[];
+    favoriteBookIds?: string[];
+    purchasedBookIds?: string[];
+  };
+  stats?: {
+    booksWithProgressCount: number;
+    bookmarksCount: number;
+    highlightsCount: number;
+    favoritesCount?: number;
+    purchasedCount?: number;
+  };
+}
+
+export type SyncActionType = 'upload' | 'download' | 'bidirectional' | 'auto_sync' | 'test_connection';
+export type SyncStatusType = 'success' | 'failed' | 'in_progress' | 'warning';
+export type SyncDirectionType = 'local_to_cloud' | 'cloud_to_local' | 'bidirectional' | 'diagnostic';
+
+export interface SyncHistoryEntry {
+  id: string;
+  timestamp: string; // ISO string
+  action: SyncActionType;
+  status: SyncStatusType;
+  summary: string;
+  direction: SyncDirectionType;
+  userEmail?: string;
+  details?: {
+    purchasedCount?: number;
+    favoritesCount?: number;
+    progressCount?: number;
+    bookmarksCount?: number;
+    highlightsCount?: number;
+    offlinePinnedCount?: number;
+    durationMs?: number;
+    error?: string;
+    remoteLastModified?: string;
+    deviceInfo?: string;
+    totalEntities?: number;
+  };
 }

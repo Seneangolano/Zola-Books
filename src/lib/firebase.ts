@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  initializeFirestore,
+  getFirestore,
   setLogLevel, 
   doc, 
   setDoc, 
@@ -30,16 +30,14 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { BookProgress, Bookmark, Highlight } from '../types';
 
-// Set Firestore log level to reduce unnecessary backend retry warning noise
-setLogLevel('error');
+// Silence verbose internal connection retry warnings when operating offline or during connection handshakes
+setLogLevel('silent');
 
 // Initialize Firebase App
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with force long polling for maximum connection stability in container proxy environments
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId)
-  : initializeFirestore(app, { experimentalForceLongPolling: true });
+// Initialize Firestore with specific database ID
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
@@ -251,6 +249,7 @@ export interface UserSyncData {
   bookmarks?: Bookmark[];
   highlights?: Highlight[];
   updatedAt?: any;
+  lastSyncedAt?: string;
 }
 
 /**

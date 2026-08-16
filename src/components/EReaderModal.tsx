@@ -292,7 +292,7 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
   const DEFAULT_GESTURES = {
     swipeLeft: 'next_page' as const,
     swipeRight: 'prev_page' as const,
-    doubleTap: 'toggle_layout' as const,
+    doubleTap: 'toggle_zen' as const,
     longPress: 'toggle_immersion' as const
   };
 
@@ -353,6 +353,7 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
     'next_page': 'Virar para Página Seguinte',
     'prev_page': 'Voltar à Página Anterior',
     'toggle_layout': 'Alternar Modo de Exibição (Único / Duplo / Contínuo)',
+    'toggle_night': 'Alternar Modo Leitura Noturna',
     'toggle_zen': 'Alternar Modo Zen',
     'toggle_immersion': 'Alternar Imersão Total',
     'bookmark': 'Marcar / Desmarcar Página',
@@ -639,6 +640,7 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
   };
   const [copiedLink, setCopiedLink] = useState(false);
   const [isZenMode, setIsZenMode] = useState(false);
+  const [showZenToast, setShowZenToast] = useState(false);
   const [isTotalImmersion, setIsTotalImmersion] = useState(false);
   const [showImmersionToast, setShowImmersionToast] = useState(false);
   const [isHoldingCenter, setIsHoldingCenter] = useState(false);
@@ -728,8 +730,10 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
   const handleParagraphDoubleClick = (paragraphText: string) => {
     const selection = window.getSelection();
     const selectedText = selection ? selection.toString().trim() : '';
-    if (selectedText) {
+    if (selectedText && selectedText.length >= 2) {
       handleOpenDictionary(selectedText, paragraphText);
+    } else {
+      toggleZenMode();
     }
   };
 
@@ -830,8 +834,16 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
     setIsZenMode(next);
     if (next) {
       setShowToc(false);
+      setShowFormatMenu(false);
+      setShowInBookSearch(false);
+      setShowTtsDock(false);
       setIsTotalImmersion(false);
-      addNotification('Modo Zen Ativado', 'Ambiente de leitura sem distrações. Pressione ESC ou o botão para sair.');
+      setShowZenToast(true);
+      setTimeout(() => setShowZenToast(false), 4000);
+      addNotification('Modo Zen Ativado ✨', 'Todas as barras foram ocultadas. Duplo clique na área de leitura ou pressione ESC para sair.', 'system');
+    } else {
+      setShowZenToast(false);
+      addNotification('Modo Zen Desativado', 'Controlos e barras de navegação restaurados.', 'system');
     }
   };
 
@@ -845,6 +857,16 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
       setShowImmersionToast(true);
       setTimeout(() => setShowImmersionToast(false), 4500);
       addNotification('Imersão Total Ativada', 'Todas as barras foram ocultadas. Mantenha o dedo pressionado (1s) no centro para retornar aos controlos.', 'system');
+    }
+  };
+
+  const toggleNightMode = () => {
+    if (readerTheme === 'night') {
+      setReaderTheme('dark');
+      addNotification('Modo Noturno Desativado', 'Esquema de cores padrão restaurado.', 'system');
+    } else {
+      setReaderTheme('night');
+      addNotification('Modo Leitura Noturna Ativado 🌙', 'Fundo escuro com texto cinza claro ativado para conforto visual em ambientes com pouca luz.', 'system');
     }
   };
 
@@ -902,6 +924,9 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
         toggleZenMode();
         break;
       }
+      case 'toggle_night':
+        toggleNightMode();
+        break;
       case 'toggle_immersion':
         toggleTotalImmersion();
         break;
@@ -1291,6 +1316,26 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
 
             {/* Center/Right Controls */}
             <div className="flex items-center gap-1 sm:gap-2">
+
+              {/* Botão Modo Leitura Noturna */}
+              <button
+                onClick={toggleNightMode}
+                className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 font-bold text-xs shadow-sm ${
+                  readerTheme === 'night'
+                    ? 'bg-sky-500 text-slate-950 font-black shadow-md ring-2 ring-sky-400/40'
+                    : 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30'
+                }`}
+                title={
+                  readerTheme === 'night'
+                    ? 'Desativar Modo Leitura Noturna (Restaurar tema escuro padrão)'
+                    : 'Modo Leitura Noturna — Fundo escuro com texto cinza claro para conforto visual com pouca luz'
+                }
+              >
+                <Moon className={`w-3.5 h-3.5 ${readerTheme === 'night' ? 'fill-current text-slate-950' : 'text-indigo-300'}`} />
+                <span className="hidden sm:inline">
+                  {readerTheme === 'night' ? 'Leitura Noturna ✓' : 'Leitura Noturna'}
+                </span>
+              </button>
 
               {/* Botão Imersão Total */}
               <button
@@ -1807,14 +1852,14 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
 
                             {/* Double Tap */}
                             <div className="space-y-1">
-                              <label className="text-slate-300 font-medium block">Toque Duplo Rápido no Ecrã:</label>
+                              <label className="text-slate-300 font-medium block">Toque Duplo Rápido / Duplo Clique na Leitura:</label>
                               <select
                                 value={gesturesConfig.doubleTap}
                                 onChange={(e) => setGesturesConfig(prev => ({ ...prev, doubleTap: e.target.value as any }))}
                                 className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-[11px] text-slate-200 font-bold focus:ring-1 focus:ring-amber-500"
                               >
+                                <option value="toggle_zen">Alternar Modo Zen (Ocultar todas as barras e botões)</option>
                                 <option value="toggle_layout">Alternar Modo de Exibição (Único / Livro / Contínuo)</option>
-                                <option value="toggle_zen">Alternar Modo Zen</option>
                                 <option value="bookmark">Marcar / Desmarcar Página</option>
                                 <option value="next_page">Avançar Página</option>
                                 <option value="none">Desativado / Nenhuma Ação</option>
@@ -2121,28 +2166,42 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
 
           {/* Floating Exit Zen Button & Minimal Toolbar in Zen Mode */}
           {isZenMode && !isTotalImmersion && (
-            <div className="absolute top-4 right-6 z-40 flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity">
+            <div className="absolute top-4 right-6 z-40 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity">
+              <span className="hidden sm:inline text-[11px] font-bold text-amber-400/90 bg-slate-950/80 px-3 py-1 rounded-full border border-amber-500/30 backdrop-blur-md">
+                ✨ Modo Zen • Duplo clique para sair
+              </span>
               <button
-                onClick={() => setFontSize(Math.max(14, fontSize - 2))}
-                className="p-2 rounded-full bg-current/10 hover:bg-current/20 backdrop-blur-md font-bold text-xs"
+                onClick={toggleNightMode}
+                className={`p-1.5 rounded-full backdrop-blur-md font-bold text-xs transition-all border ${
+                  readerTheme === 'night'
+                    ? 'bg-sky-500 text-slate-950 border-sky-400'
+                    : 'bg-slate-950/80 hover:bg-slate-800 text-sky-300 border-slate-700'
+                }`}
+                title={readerTheme === 'night' ? 'Desativar Modo Leitura Noturna' : 'Ativar Modo Leitura Noturna'}
+              >
+                <Moon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setFontSize(Math.max(12, fontSize - 1))}
+                className="p-1.5 rounded-full bg-slate-950/80 hover:bg-slate-800 text-amber-300 border border-slate-700 backdrop-blur-md font-bold text-xs"
                 title="Diminuir Fonte"
               >
                 A-
               </button>
               <button
-                onClick={() => setFontSize(Math.min(28, fontSize + 2))}
-                className="p-2 rounded-full bg-current/10 hover:bg-current/20 backdrop-blur-md font-bold text-xs"
+                onClick={() => setFontSize(Math.min(32, fontSize + 1))}
+                className="p-1.5 rounded-full bg-slate-950/80 hover:bg-slate-800 text-amber-300 border border-slate-700 backdrop-blur-md font-bold text-xs"
                 title="Aumentar Fonte"
               >
                 A+
               </button>
               <button
                 onClick={toggleZenMode}
-                className="px-3 py-1.5 rounded-full bg-amber-500 text-slate-950 font-extrabold text-xs shadow-lg flex items-center gap-1.5 transition-transform hover:scale-105"
-                title="Sair do Modo Zen (ESC)"
+                className="px-3 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg flex items-center gap-1.5 transition-transform hover:scale-105"
+                title="Sair do Modo Zen (Duplo clique ou ESC)"
               >
                 <Minimize2 className="w-3.5 h-3.5" />
-                <span>Sair do Modo Zen</span>
+                <span>Sair Zen</span>
               </button>
             </div>
           )}
@@ -2668,6 +2727,14 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
             </div>
           )}
 
+          {/* Toast de Orientação do Modo Zen */}
+          {isZenMode && showZenToast && (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-amber-500/60 text-amber-200 text-xs px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-top-4 pointer-events-none">
+              <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+              <span><strong>Modo Zen:</strong> Dê um duplo clique na área de leitura ou pressione ESC para sair</span>
+            </div>
+          )}
+
           {/* Toast de Confirmação de Leitura Retomada */}
           {resumedNotice && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-slate-950 text-xs font-black px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-3">
@@ -2680,14 +2747,19 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
           <div 
             ref={contentScrollRef}
             onScroll={handleContainerScroll}
+            onDoubleClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('select')) return;
+              toggleZenMode();
+            }}
             onMouseUp={(e) => {
               handleTextSelection();
               cancelLongPress();
             }}
             onMouseDown={startLongPress}
             onMouseLeave={cancelLongPress}
-            onTouchStart={startLongPress}
-            onTouchEnd={cancelLongPress}
+            onTouchStart={handleTouchStartCanvas}
+            onTouchEnd={handleTouchEndCanvas}
             onTouchCancel={cancelLongPress}
             onKeyUp={handleTextSelection}
             className={`flex-1 overflow-y-auto ${
@@ -3330,9 +3402,9 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
           </div>
         )}
 
-        {/* Footer Navigation Bar (Hidden in Imersão Total) */}
-        {!isTotalImmersion && (
-          <div className={`px-6 py-3 border-t border-current/10 flex items-center justify-between text-xs font-semibold ${isZenMode ? 'bg-current/5 opacity-80 hover:opacity-100 transition-opacity' : ''}`}>
+        {/* Footer Navigation Bar (Hidden in Zen Mode and Imersão Total) */}
+        {!isTotalImmersion && !isZenMode && (
+          <div className="px-6 py-3 border-t border-current/10 flex items-center justify-between text-xs font-semibold">
             <button
               disabled={currentChapterIndex === 0}
               onClick={() => setCurrentChapterIndex(prev => Math.max(0, prev - 1))}

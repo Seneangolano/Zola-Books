@@ -24,11 +24,15 @@ import {
   Bell, 
   FileText,
   Upload,
-  Loader2
+  Loader2,
+  Pin
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import { uploadUserAvatar } from '../lib/firebase';
+import { SecurityBackupSection } from './SecurityBackupSection';
+import { AndroidStorageManagerSection } from './AndroidStorageManagerSection';
+import { OfflineCacheSettingsSection } from './OfflineCacheSettingsSection';
 
 export const UserProfileModal: React.FC = () => {
   const { 
@@ -44,11 +48,15 @@ export const UserProfileModal: React.FC = () => {
     purchasedBooks,
     bookmarks,
     offlineBooks,
+    pinnedOfflineBookIds,
     clearAllOfflineBooks,
-    setIsReadingReportModalOpen
+    setIsReadingReportModalOpen,
+    isDeviceSyncModalOpen,
+    setIsDeviceSyncModalOpen,
+    cloudSyncStatus
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'info' | 'stats' | 'settings'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'storage' | 'stats' | 'backup' | 'settings'>('info');
 
   // Form State
   const [name, setName] = useState(currentUser.name);
@@ -188,30 +196,53 @@ export const UserProfileModal: React.FC = () => {
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex bg-slate-800/80 p-1 rounded-2xl text-xs font-extrabold border border-slate-700/60">
+            <div className="flex bg-slate-800/80 p-1 rounded-2xl text-xs font-extrabold border border-slate-700/60 overflow-x-auto gap-1">
               <button
                 onClick={() => setActiveTab('info')}
-                className={`flex-1 py-2 rounded-xl transition-all ${
+                className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap ${
                   activeTab === 'info' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Dados Pessoais
               </button>
               <button
-                onClick={() => setActiveTab('stats')}
-                className={`flex-1 py-2 rounded-xl transition-all ${
-                  activeTab === 'stats' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                onClick={() => setActiveTab('storage')}
+                className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1.5 ${
+                  activeTab === 'storage' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-amber-400 hover:text-amber-300'
                 }`}
               >
-                Dispositivos &amp; Nuvem
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Armazenamento &amp; Cache</span>
+                {pinnedOfflineBookIds.length > 0 && (
+                  <span className="bg-purple-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                    {pinnedOfflineBookIds.length}📌
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('backup')}
+                className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1 ${
+                  activeTab === 'backup' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Backup (.JSON)</span>
               </button>
               <button
                 onClick={() => setActiveTab('settings')}
-                className={`flex-1 py-2 rounded-xl transition-all ${
+                className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap ${
                   activeTab === 'settings' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Aparência &amp; Cache
+                Aparência
+              </button>
+              <button
+                onClick={() => setActiveTab('stats')}
+                className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap ${
+                  activeTab === 'stats' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Dispositivos
               </button>
             </div>
 
@@ -327,19 +358,54 @@ export const UserProfileModal: React.FC = () => {
               </form>
             )}
 
-            {/* TAB 2: DISPOSITIVOS & NUVEM */}
+            {/* TAB 2: ARMAZENAMENTO ANDROID & CACHE PERMANENTE */}
+            {activeTab === 'storage' && (
+              <div className="space-y-4">
+                <OfflineCacheSettingsSection />
+                <AndroidStorageManagerSection />
+              </div>
+            )}
+
+            {/* TAB 3: DISPOSITIVOS & NUVEM */}
             {activeTab === 'stats' && (
               <div className="space-y-4 text-xs">
-                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start gap-3">
-                  <div className="p-2 bg-emerald-500 text-slate-950 rounded-xl mt-0.5">
-                    <Cloud className="w-5 h-5" />
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-emerald-500 text-slate-950 rounded-xl mt-0.5">
+                      <Cloud className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-sm text-emerald-300">Firestore Cloud Sync em Tempo Real</h3>
+                      <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                        Os teus e-books comprados, livros favoritos, progresso de leitura em % e marcadores de página são sincronizados em tempo real no Firestore.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm text-emerald-300">Firestore Cloud Sync em Tempo Real</h3>
-                    <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                      Os teus e-books comprados, livros favoritos, progresso de leitura em % e marcadores de página são guardados automaticamente no Firestore.
-                    </p>
+                </div>
+
+                {/* Device Sync Hub Button */}
+                <div className="p-4 bg-gradient-to-r from-amber-500/20 via-slate-800 to-slate-900 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-amber-500 text-slate-950 rounded-xl font-bold shrink-0">
+                      <Cloud className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-white text-xs">Central de Sincronização de Dispositivos</h4>
+                      <p className="text-[10px] text-slate-300">Histórico de sincronizações, teste de latência e upload/download forçado.</p>
+                    </div>
                   </div>
+
+                  <button
+                    id="profile-modal-open-sync-btn"
+                    onClick={() => {
+                      setIsUserProfileOpen(false);
+                      setIsDeviceSyncModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
+                  >
+                    <Cloud className="w-3.5 h-3.5" />
+                    <span>Abrir Sincronização ☁️</span>
+                  </button>
                 </div>
 
                 <div className="space-y-2">
@@ -398,9 +464,19 @@ export const UserProfileModal: React.FC = () => {
               </div>
             )}
 
-            {/* TAB 3: APARÊNCIA & CACHE */}
+            {/* TAB 3: BACKUP DE SEGURANÇA & RESTAURAÇÃO */}
+            {activeTab === 'backup' && (
+              <div className="space-y-4">
+                <SecurityBackupSection />
+              </div>
+            )}
+
+            {/* TAB 4: APARÊNCIA & CACHE */}
             {activeTab === 'settings' && (
               <div className="space-y-4 text-xs">
+                {/* Embedded Backup Shortcut Section */}
+                <SecurityBackupSection compact />
+
                 {/* Theme toggle */}
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -437,24 +513,44 @@ export const UserProfileModal: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Offline Cache Stats */}
-                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">
+                {/* Offline Cache Stats & Permanent Pin Shortcut */}
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <HardDrive className="w-5 h-5 text-cyan-400" />
+                    <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
                     <div>
-                      <div className="font-bold text-white">Cache de Leitura Offline Service Worker</div>
-                      <div className="text-[10px] text-slate-400">{offlineBooks.length} e-book(s) em memória local</div>
+                      <div className="font-bold text-white flex items-center gap-2">
+                        <span>Armazenamento &amp; Cache Permanente</span>
+                        {pinnedOfflineBookIds.length > 0 && (
+                          <span className="bg-purple-600/30 text-purple-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-500/30">
+                            {pinnedOfflineBookIds.length} fixado(s) 📌
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {offlineBooks.length} e-book(s) em cache local • Otimização para Android
+                      </div>
                     </div>
                   </div>
-                  {offlineBooks.length > 0 && (
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={clearAllOfflineBooks}
-                      className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs px-3 py-1.5 rounded-xl transition-all flex items-center gap-1"
+                      onClick={() => setActiveTab('storage')}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Limpar Cache</span>
+                      <Pin className="w-3.5 h-3.5" />
+                      <span>Gerir Livros Fixados</span>
                     </button>
-                  )}
+                    {offlineBooks.length > 0 && (
+                      <button
+                        onClick={clearAllOfflineBooks}
+                        className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs px-3 py-2 rounded-xl transition-all flex items-center gap-1"
+                        title="Limpar todos os livros offline"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

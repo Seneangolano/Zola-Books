@@ -19,7 +19,9 @@ import {
   Moon,
   Volume2,
   VolumeX,
-  Key
+  Key,
+  Cloud,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { UserRole, Currency } from '../types';
@@ -48,6 +50,9 @@ export const Header: React.FC = () => {
     setIsAndroid15ModalOpen,
     setIsRoadmapModalOpen,
     openTestLinkModal,
+    isDeviceSyncModalOpen,
+    setIsDeviceSyncModalOpen,
+    cloudSyncStatus,
     notifications,
     theme,
     toggleTheme,
@@ -120,6 +125,21 @@ export const Header: React.FC = () => {
             title="Analisar e Resolver Erro do APK no Android 15 (API 35)"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Erro Android 15?
+          </button>
+          <span className="text-slate-600">|</span>
+          <button 
+            id="header-top-sync-btn"
+            onClick={() => setIsDeviceSyncModalOpen(true)}
+            className="hover:text-amber-200 transition-colors flex items-center gap-1.5 font-bold text-amber-300 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/30"
+            title="Sincronização de Dispositivos via Firestore"
+          >
+            <Cloud className="w-3.5 h-3.5 text-amber-400" />
+            <span>Sincronizar Dispositivos</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              cloudSyncStatus === 'synced' ? 'bg-emerald-400' :
+              cloudSyncStatus === 'syncing' ? 'bg-blue-400 animate-ping' :
+              cloudSyncStatus === 'offline' ? 'bg-amber-400' : 'bg-rose-400'
+            }`}></span>
           </button>
           <span className="text-slate-600">|</span>
           <button 
@@ -280,6 +300,24 @@ export const Header: React.FC = () => {
               )}
             </button>
 
+            {/* Device Sync Button */}
+            <button
+              id="header-cloud-sync-icon-btn"
+              onClick={() => setIsDeviceSyncModalOpen(true)}
+              className={`p-2 rounded-lg hover:bg-slate-800 relative transition-colors ${
+                isDeviceSyncModalOpen ? 'text-amber-400 bg-slate-800' : 'text-slate-300'
+              }`}
+              title="Sincronização de Dispositivos (Firestore Nuvem)"
+              aria-label="Abrir modal de sincronização de dispositivos"
+            >
+              <Cloud className="w-5 h-5" />
+              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${
+                cloudSyncStatus === 'synced' ? 'bg-emerald-500' :
+                cloudSyncStatus === 'syncing' ? 'bg-blue-500 animate-ping' :
+                cloudSyncStatus === 'offline' ? 'bg-amber-500' : 'bg-rose-500'
+              }`}></span>
+            </button>
+
             {/* Shopping Cart Button */}
             <button
               onClick={() => setIsCartOpen(true)}
@@ -293,6 +331,99 @@ export const Header: React.FC = () => {
                 </span>
               )}
             </button>
+
+            {/* Notification Bell Dropdown Button */}
+            <div className="relative">
+              <button
+                onClick={() => setIsNotifOpen(!isNotifOpen)}
+                className={`p-2 rounded-lg hover:bg-slate-800 relative transition-colors ${
+                  isNotifOpen ? 'text-amber-400 bg-slate-800' : 'text-slate-300'
+                }`}
+                title="Notificações e Avisos de Venda"
+                aria-label="Abrir notificações"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown Panel */}
+              {isNotifOpen && (
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden text-xs">
+                  <div className="p-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-amber-400" />
+                      <span className="font-bold text-white">Notificações &amp; Vendas</span>
+                    </div>
+                    <span className="text-[11px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-semibold">
+                      {notifications.length} {notifications.length === 1 ? 'aviso' : 'avisos'}
+                    </span>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-800 p-1">
+                    {notifications.length === 0 ? (
+                      <div className="text-center py-8 px-4 text-slate-400 space-y-1">
+                        <Bell className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+                        <p className="font-semibold text-slate-300">Sem notificações no momento</p>
+                        <p className="text-[11px] text-slate-500">As tuas vendas e alertas do sistema surgirão aqui.</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (n.type === 'royalties' || n.type === 'order') {
+                              if (currentUser.role === 'author') {
+                                setActiveView('author_panel');
+                              } else {
+                                setActiveView('seller_panel');
+                              }
+                            }
+                            setIsNotifOpen(false);
+                          }}
+                          className={`p-3 hover:bg-slate-800/70 transition-colors cursor-pointer rounded-xl ${
+                            !n.read ? 'bg-amber-500/5' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <h4 className="font-bold text-slate-100 flex items-center gap-1.5 truncate">
+                              {n.type === 'royalties' && <span className="text-emerald-400">💰</span>}
+                              {n.type === 'order' && <span className="text-blue-400">📦</span>}
+                              <span className="truncate">{n.title}</span>
+                            </h4>
+                            <span className="text-[10px] text-slate-400 shrink-0">{n.date}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">
+                            {n.message}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="p-2.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                    <button
+                      onClick={() => {
+                        setActiveView(currentUser.role === 'author' ? 'author_panel' : 'seller_panel');
+                        setIsNotifOpen(false);
+                      }}
+                      className="text-amber-400 hover:text-amber-300 font-bold"
+                    >
+                      Abrir Painel de Vendas →
+                    </button>
+                    <button
+                      onClick={() => setIsNotifOpen(false)}
+                      className="text-slate-400 hover:text-slate-200"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Role Switcher Dropdown (Allows testing Customer, Author, Seller, Admin) */}
             <div className="relative">
@@ -516,6 +647,24 @@ export const Header: React.FC = () => {
                 isSoundFeedbackActive ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
               }`}>
                 {isSoundFeedbackActive ? 'Ativo 🔊' : 'Inativo 🔇'}
+              </span>
+            </button>
+            <button
+              id="mobile-menu-sync-btn"
+              onClick={() => { setIsDeviceSyncModalOpen(true); setIsMobileMenuOpen(false); }}
+              className="text-left py-2 hover:text-amber-400 border-b border-slate-800 flex items-center justify-between text-amber-300 font-bold"
+            >
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-amber-400" />
+                <span>Sincronização de Dispositivos</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
+                cloudSyncStatus === 'synced' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                cloudSyncStatus === 'syncing' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+                'bg-amber-500/20 text-amber-300 border-amber-500/30'
+              }`}>
+                {cloudSyncStatus === 'synced' ? 'Sincronizado ☁️' :
+                 cloudSyncStatus === 'syncing' ? 'A Sincronizar...' : 'Firestore'}
               </span>
             </button>
             <button

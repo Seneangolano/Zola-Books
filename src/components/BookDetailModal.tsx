@@ -22,12 +22,15 @@ import {
   Clock,
   Zap,
   ArrowRight,
-  Key
+  Key,
+  Gift,
+  Download
 } from 'lucide-react';
 import { Book, Review } from '../types';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import { getOptimizedBookCover } from '../lib/imageOptimizer';
+import { BookPriceComparisonSection } from './BookPriceComparisonSection';
 
 interface BookDetailModalProps {
   book: Book;
@@ -45,6 +48,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
     addToCart,
     setActiveEReaderBook,
     purchasedBooks,
+    claimFreeBook,
     setIsCartOpen,
     currentUser,
     addNotification,
@@ -319,6 +323,18 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
 
               {/* Quick Actions */}
               <div className="space-y-2">
+                {activeBook.isFree && !isPurchased ? (
+                  <button
+                    onClick={async () => {
+                      await claimFreeBook(activeBook);
+                    }}
+                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs py-3.5 rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                  >
+                    <Gift className="w-4 h-4" />
+                    <span>Adicionar à Biblioteca (Grátis)</span>
+                  </button>
+                ) : null}
+
                 <button
                   onClick={() => {
                     setActiveEReaderBook(activeBook);
@@ -327,16 +343,18 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                   className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs py-3 rounded-xl border border-amber-500/30 flex items-center justify-center gap-2 transition-colors"
                 >
                   <BookOpen className="w-4 h-4" />
-                  <span>{isPurchased ? 'Ler E-book Completo' : 'Ler Amostra Grátis'}</span>
+                  <span>{isPurchased ? 'Ler E-book Completo' : activeBook.isFree ? 'Começar a Ler Agora' : 'Ler Amostra Grátis'}</span>
                 </button>
 
-                <button
-                  onClick={handleWhatsAppBuy}
-                  className="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-xs py-3 rounded-xl border border-emerald-500/40 flex items-center justify-center gap-2 transition-colors"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Encomendar via WhatsApp</span>
-                </button>
+                {!activeBook.isFree && (
+                  <button
+                    onClick={handleWhatsAppBuy}
+                    className="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-xs py-3 rounded-xl border border-emerald-500/40 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Encomendar via WhatsApp</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => openTestLinkModal(activeBook)}
@@ -469,21 +487,42 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                 </div>
               )}
 
-              {/* Price Banner, Wishlist & Add to Cart */}
-              <div className="bg-gradient-to-r from-amber-500/10 to-purple-500/10 border border-amber-500/30 p-4 rounded-2xl space-y-3">
+              {/* Price Banner, Wishlist & Action Buttons */}
+              <div className={`p-4 rounded-2xl space-y-3 border ${
+                activeBook.isFree
+                  ? 'bg-gradient-to-r from-emerald-500/10 via-slate-900 to-teal-500/10 border-emerald-500/30'
+                  : 'bg-gradient-to-r from-amber-500/10 to-purple-500/10 border-amber-500/30'
+              }`}>
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <span className="text-xs text-slate-400 font-semibold block">
-                      {activeBook.isFlashSale ? '⚡ Preço com Desconto:' : 'Preço Digital:'}
+                      {activeBook.isFree 
+                        ? '🎁 Modalidade de Acesso:' 
+                        : activeBook.isFlashSale 
+                        ? '⚡ Preço com Desconto:' 
+                        : 'Preço Digital:'}
                     </span>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-black text-amber-400">
-                        {formatPrice(activeBook.priceAOA, activeBook.priceUSD)}
-                      </span>
-                      {activeBook.originalPriceAOA && (
-                        <span className="text-sm font-semibold text-slate-500 line-through">
-                          {formatPrice(activeBook.originalPriceAOA, activeBook.originalPriceUSD)}
-                        </span>
+                      {activeBook.isFree ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl font-black text-emerald-400">
+                            GRÁTIS
+                          </span>
+                          <span className="bg-emerald-500/20 text-emerald-300 text-xs font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-500/40">
+                            0 Kz / $0.00
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-2xl font-black text-amber-400">
+                            {formatPrice(activeBook.priceAOA, activeBook.priceUSD)}
+                          </span>
+                          {activeBook.originalPriceAOA && (
+                            <span className="text-sm font-semibold text-slate-500 line-through">
+                              {formatPrice(activeBook.originalPriceAOA, activeBook.originalPriceUSD)}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -504,22 +543,55 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                       {isFavorite && <Bell className="w-3.5 h-3.5 text-rose-300 animate-pulse ml-0.5" />}
                     </button>
 
-                    <button
-                      onClick={() => {
-                        addToCart(activeBook);
-                        setIsCartOpen(true);
-                        onClose();
-                      }}
-                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95"
-                    >
-                      <ShoppingBag className="w-4 h-4" />
-                      <span>{isPurchased ? 'Adicionar Novamente' : 'Adicionar ao Carrinho'}</span>
-                    </button>
+                    {activeBook.isFree ? (
+                      isPurchased ? (
+                        <button
+                          onClick={() => {
+                            setActiveEReaderBook(activeBook);
+                            onClose();
+                          }}
+                          className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          <span>Na tua Biblioteca (Ler Agora)</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            await claimFreeBook(activeBook);
+                          }}
+                          className="bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/25 transition-all active:scale-95"
+                        >
+                          <Gift className="w-4 h-4" />
+                          <span>Adicionar à Biblioteca com 1 Clique</span>
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        onClick={() => {
+                          addToCart(activeBook);
+                          setIsCartOpen(true);
+                          onClose();
+                        }}
+                        className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+                      >
+                        <ShoppingBag className="w-4 h-4" />
+                        <span>{isPurchased ? 'Adicionar Novamente' : 'Adicionar ao Carrinho'}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
+                {/* Free book informative badge */}
+                {activeBook.isFree && !isPurchased && (
+                  <div className="bg-emerald-950/50 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-[11px] text-emerald-200 font-medium animate-in fade-in">
+                    <Gift className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Este e-book é 100% gratuito oferecido pelo autor. Não é necessário cartão ou comprovativo de pagamento!</span>
+                  </div>
+                )}
+
                 {/* Wishlist Notification Alert Helper */}
-                {isFavorite && (
+                {isFavorite && !activeBook.isFree && (
                   <div className="bg-slate-950/60 border border-rose-500/30 p-2.5 rounded-xl flex items-center gap-2 text-[11px] text-rose-200 font-medium animate-in fade-in">
                     <Bell className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     <span>Alertas ativos: Notificaremos quando o preço de "{activeBook.title}" baixar ou houver promoções relâmpago!</span>
@@ -576,6 +648,12 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
 
             </div>
           </div>
+
+          {/* Section: COMPARATIVO DE PREÇOS E PLANOS */}
+          <BookPriceComparisonSection 
+            activeBook={activeBook} 
+            onCloseModal={onClose} 
+          />
 
           {/* Section: MAIS DESTE AUTOR (Cross-Selling Section) */}
           <div className="pt-8 border-t border-slate-800 space-y-5">
@@ -635,6 +713,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {displayedCrossSellBooks.map((otherBook) => {
                 const isOtherInCart = cart.some((c) => c.book.id === otherBook.id);
+                const isOtherPurchased = purchasedBooks.some((p) => p.id === otherBook.id);
                 return (
                   <div
                     key={otherBook.id}
@@ -653,6 +732,11 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                         {otherBook.isAngolanAuthor && (
                           <span className="absolute bottom-1 left-1 bg-amber-500 text-slate-950 text-[9px] font-black px-1 py-0.2 rounded">
                             🇦🇴
+                          </span>
+                        )}
+                        {otherBook.isFree && (
+                          <span className="absolute top-1 left-1 bg-emerald-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow">
+                            GRÁTIS
                           </span>
                         )}
                       </div>
@@ -678,8 +762,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                         </div>
 
                         <div className="mt-2">
-                          <span className="text-xs font-black text-amber-400 block">
-                            {otherBook.isFree ? 'Gratuito' : formatPrice(otherBook.priceAOA, otherBook.priceUSD)}
+                          <span className={`text-xs font-black block ${otherBook.isFree ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {otherBook.isFree ? '🎁 Gratuito (0 Kz)' : formatPrice(otherBook.priceAOA, otherBook.priceUSD)}
                           </span>
                         </div>
                       </div>
@@ -694,15 +778,38 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose 
                         <span>Ver Obra</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          addToCart(otherBook);
-                        }}
-                        className="w-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-[11px] font-extrabold py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
-                      >
-                        <ShoppingBag className="w-3 h-3 shrink-0" />
-                        <span>{isOtherInCart ? 'No Carrinho' : 'Comprar'}</span>
-                      </button>
+                      {otherBook.isFree ? (
+                        isOtherPurchased ? (
+                          <button
+                            onClick={() => handleSelectOtherBook(otherBook)}
+                            className="w-full bg-emerald-500/20 text-emerald-300 text-[11px] font-extrabold py-1.5 px-2 rounded-xl border border-emerald-500/40 flex items-center justify-center gap-1"
+                          >
+                            <BookOpen className="w-3 h-3 shrink-0" />
+                            <span>Na Biblioteca</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={async () => {
+                              await claimFreeBook(otherBook);
+                            }}
+                            className="w-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 active:scale-95 text-slate-950 text-[11px] font-black py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
+                            title="Adicionar à biblioteca sem pagar"
+                          >
+                            <Gift className="w-3 h-3 shrink-0" />
+                            <span>Obter Grátis</span>
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => {
+                            addToCart(otherBook);
+                          }}
+                          className="w-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-[11px] font-extrabold py-1.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
+                        >
+                          <ShoppingBag className="w-3 h-3 shrink-0" />
+                          <span>{isOtherInCart ? 'No Carrinho' : 'Comprar'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

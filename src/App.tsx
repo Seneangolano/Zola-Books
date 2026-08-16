@@ -25,10 +25,13 @@ import { AccessibilityModal } from './components/AccessibilityModal';
 import { RoadmapModal } from './components/RoadmapModal';
 import { TemporaryTestLinkModal } from './components/TemporaryTestLinkModal';
 import { ReadingReportPdfModal } from './components/ReadingReportPdfModal';
+import { DeviceSyncModal } from './components/DeviceSyncModal';
 import { AuthorProfileModal } from './components/AuthorProfileModal';
 import { TagFilterBar } from './components/TagFilterBar';
 import { VoiceSearchButton } from './components/VoiceSearchButton';
 import { InAppPushNotificationBanner } from './components/InAppPushNotificationBanner';
+import { SellerSalePushBanner } from './components/SellerSalePushBanner';
+import { ReaderTestimonials } from './components/ReaderTestimonials';
 import { Footer } from './components/Footer';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { Book } from './types';
@@ -212,7 +215,10 @@ export function App() {
       selectedCategory === 'Todos' || b.category === selectedCategory;
 
     const matchesTag =
-      !selectedTag || selectedTag === 'Todas' || (b.tags && b.tags.includes(selectedTag));
+      !selectedTag ||
+      selectedTag === 'Todas' ||
+      (selectedTag === 'Grátis' && b.isFree) ||
+      (b.tags && b.tags.includes(selectedTag));
 
     return matchesSearch && matchesCat && matchesTag;
   });
@@ -425,6 +431,9 @@ export function App() {
       {/* Floating In-App Push Notification Toast Banner for Followed Authors */}
       <InAppPushNotificationBanner />
 
+      {/* Real-time Seller Sale Notification Banner & Cash Chime Popup */}
+      <SellerSalePushBanner />
+
       {/* Main Content Router with Smooth View Transitions */}
       <main className="flex-1 pb-16 md:pb-0 overflow-x-hidden">
         <AnimatePresence mode="wait">
@@ -501,6 +510,9 @@ export function App() {
                   ))}
                 </div>
               </section>
+
+              {/* Reader Testimonials Section (Testemunhos de Leitores) */}
+              <ReaderTestimonials />
 
               {/* Zola AI Assistant Banner */}
               <div className="bg-gradient-to-r from-purple-950/80 via-slate-900 to-amber-950/40 border border-purple-500/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
@@ -792,6 +804,8 @@ export function App() {
         isOpen={isReadingReportModalOpen}
         onClose={() => setIsReadingReportModalOpen(false)}
       />
+
+      <DeviceSyncModal />
 
     </div>
   );

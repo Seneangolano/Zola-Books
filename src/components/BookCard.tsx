@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Heart, BookOpen, Download, ShoppingBag, Eye, MessageCircle, User, UserCheck } from 'lucide-react';
+import { Star, Heart, BookOpen, Download, ShoppingBag, Eye, MessageCircle, User, UserCheck, Gift } from 'lucide-react';
 import { Book } from '../types';
 import { useApp } from '../context/AppContext';
 import { getOptimizedBookCover, DEFAULT_BOOK_COVER_URL } from '../lib/imageOptimizer';
@@ -21,6 +21,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, compact = false }) => 
     followedAuthors,
     setActiveEReaderBook,
     purchasedBooks,
+    claimFreeBook,
     setIsSupportWhatsAppOpen,
     setSelectedTag,
     setSearchQuery,
@@ -197,16 +198,24 @@ export const BookCard: React.FC<BookCardProps> = ({ book, compact = false }) => 
         <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
           <div>
             <span className="text-xs text-slate-400 block font-normal">
-              {book.isFlashSale ? '⚡ Preço Relâmpago:' : 'Preço Digital:'}
+              {book.isFree ? '🎁 Acesso:' : book.isFlashSale ? '⚡ Preço Relâmpago:' : 'Preço Digital:'}
             </span>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-extrabold text-amber-400">
-                {formatPrice(book.priceAOA, book.priceUSD)}
-              </span>
-              {book.originalPriceAOA && (
-                <span className="text-[11px] font-medium text-slate-500 line-through">
-                  {formatPrice(book.originalPriceAOA, book.originalPriceUSD)}
+              {book.isFree ? (
+                <span className="text-sm font-black text-emerald-400 flex items-center gap-1">
+                  <span>GRÁTIS</span>
                 </span>
+              ) : (
+                <>
+                  <span className="text-sm font-extrabold text-amber-400">
+                    {formatPrice(book.priceAOA, book.priceUSD)}
+                  </span>
+                  {book.originalPriceAOA && (
+                    <span className="text-[11px] font-medium text-slate-500 line-through">
+                      {formatPrice(book.originalPriceAOA, book.originalPriceUSD)}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -221,6 +230,18 @@ export const BookCard: React.FC<BookCardProps> = ({ book, compact = false }) => 
             >
               <BookOpen className="w-3.5 h-3.5" />
               <span>Abrir</span>
+            </button>
+          ) : book.isFree ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                claimFreeBook(book);
+              }}
+              className="bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md active:scale-95 hover:shadow-emerald-500/20"
+              title="Adicionar à tua biblioteca grátis com 1 clique"
+            >
+              <Gift className="w-3.5 h-3.5" />
+              <span>Obter Grátis</span>
             </button>
           ) : (
             <div className="flex items-center gap-1">
