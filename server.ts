@@ -1,12 +1,11 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import JSZip from 'jszip';
-import { MOCK_BOOKS, INITIAL_USERS, INITIAL_COUPONS, INITIAL_REVIEWS, INITIAL_ORDERS, INITIAL_EXCHANGE_RATE } from './src/data/mockData.js';
+import { MOCK_BOOKS, INITIAL_USERS, INITIAL_COUPONS, INITIAL_REVIEWS, INITIAL_ORDERS, INITIAL_EXCHANGE_RATE } from './src/data/mockData';
 
 dotenv.config();
 
@@ -24,9 +23,6 @@ function getStripe(): Stripe | null {
   }
   return stripeClient;
 }
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // In-memory data store for server REST API
 let books = [...MOCK_BOOKS];
