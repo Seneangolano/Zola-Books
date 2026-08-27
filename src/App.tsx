@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import { useApp } from './context/AppContext';
 import { Header } from './components/Header';
@@ -35,7 +34,7 @@ import { ReaderTestimonials } from './components/ReaderTestimonials';
 import { Footer } from './components/Footer';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { Book } from './types';
-import { syncUserDataToFirestore } from './lib/firebase';
+import { syncUserDataToFirestore, auth } from './lib/firebase';
 import { 
   Sparkles, 
   BookOpen, 
@@ -148,14 +147,15 @@ export function App() {
     const progress = readingProgressMap ? readingProgressMap[bookId] : undefined;
     if (!progress) return;
 
-    const userIdOrEmail = currentUser?.email || currentUser?.id || 'guest-user';
+    if (!auth.currentUser) return;
 
     const performSync = async () => {
+      if (!auth.currentUser) return;
       try {
         await syncUserDataToFirestore({
-          id: userIdOrEmail,
-          name: currentUser?.name || 'Leitor Zola',
-          email: currentUser?.email || '',
+          id: auth.currentUser.uid,
+          name: currentUser?.name || auth.currentUser.displayName || 'Leitor Zola',
+          email: currentUser?.email || auth.currentUser.email || '',
           role: currentUser?.role || 'customer',
           purchasedBookIds: currentUser?.purchasedBookIds || [],
           favoriteBookIds: favoriteBookIds || [],
@@ -259,111 +259,23 @@ export function App() {
     pageTitle = "Painel Administrativo | Zola Books Angola";
   }
 
+  // Update browser document title and meta description dynamically
+  useEffect(() => {
+    document.title = pageTitle;
+    let metaDesc = document.querySelector('meta[name="description"]');
+    if (!metaDesc) {
+      metaDesc = document.createElement('meta');
+      metaDesc.setAttribute('name', 'description');
+      document.head.appendChild(metaDesc);
+    }
+    metaDesc.setAttribute('content', pageDescription);
+  }, [pageTitle, pageDescription]);
+
   return (
     <div className={`min-h-screen min-h-screen-vv keyboard-aware-pb flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 transition-colors duration-300 ${
       theme === 'light' ? 'light bg-slate-50 text-slate-900' : 'dark bg-slate-950 text-slate-100'
     }`}>
       
-      {/* Dynamic SEO Head Tags via react-helmet-async */}
-      <Helmet>
-        <title>{pageTitle}</title>
-        <meta name="description" content={pageDescription} />
-        <meta name="keywords" content="Zola Books, E-books Angola, Literatura Angolana, Livraria Digital Luanda, Ler Livros Online, Multicaixa Express, Pepetela, Agostinho Neto, Jose Eduardo Agualusa, E-reader Offline" />
-        <meta name="robots" content="index, follow" />
-        
-        {/* Open Graph Meta Tags */}
-        <meta property="og:title" content={pageTitle} />
-        <meta property="og:description" content={pageDescription} />
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="Zola Books" />
-        <meta property="og:image" content="https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=1200" />
-        
-        {/* Twitter Cards */}
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={pageTitle} />
-        <meta name="twitter:description" content={pageDescription} />
-        <meta name="twitter:image" content="https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=1200" />
-
-        {/* JSON-LD Structured Data Schema for Bookstore Organization & Books with AggregateRating and Review */}
-        <script type="application/ld+json">
-          {JSON.stringify({
-            "@context": "https://schema.org",
-            "@graph": [
-              {
-                "@type": "BookStore",
-                "@id": "https://zolabooks.ao/#bookstore",
-                "name": "Zola Books",
-                "description": "A maior livraria digital de Angola com suporte a e-books angolanos e internacionais com e-reader offline.",
-                "url": "https://zolabooks.ao",
-                "address": {
-                  "@type": "PostalAddress",
-                  "addressLocality": "Luanda",
-                  "addressCountry": "AO"
-                },
-                "paymentAccepted": "Multicaixa Express, Transferência IBAN, BAI, Cartão de Crédito",
-                "priceRange": "1500 Kz - 15000 Kz"
-              },
-              ...books.map((book) => ({
-                "@type": "Book",
-                "@id": `https://zolabooks.ao/book/${book.id}`,
-                "name": book.title,
-                "alternateName": book.subtitle,
-                "author": {
-                  "@type": "Person",
-                  "name": book.author
-                },
-                "isbn": book.isbn || `ZB-ISBN-${book.id}`,
-                "publisher": {
-                  "@type": "Organization",
-                  "name": book.publisher || "Zola Books Editora"
-                },
-                "datePublished": book.publishedYear ? String(book.publishedYear) : "2024",
-                "inLanguage": book.language === 'Português' ? 'pt-AO' : book.language === 'Inglês' ? 'en' : 'fr',
-                "image": book.coverImage,
-                "description": book.description,
-                "numberOfPages": book.pageCount,
-                "genre": book.category,
-                "offers": {
-                  "@type": "Offer",
-                  "price": book.priceAOA,
-                  "priceCurrency": "AOA",
-                  "availability": "https://schema.org/InStock",
-                  "seller": {
-                    "@type": "Organization",
-                    "name": "Zola Books"
-                  }
-                },
-                "aggregateRating": {
-                  "@type": "AggregateRating",
-                  "ratingValue": book.rating || 4.8,
-                  "ratingCount": book.reviewCount || 12,
-                  "reviewCount": book.reviewCount || 12,
-                  "bestRating": "5",
-                  "worstRating": "1"
-                },
-                "review": [
-                  {
-                    "@type": "Review",
-                    "author": {
-                      "@type": "Person",
-                      "name": "Leitor Verificado Zola Books"
-                    },
-                    "datePublished": `${book.publishedYear || 2024}-01-15`,
-                    "reviewRating": {
-                      "@type": "Rating",
-                      "ratingValue": Math.min(5, Math.max(1, Math.round(book.rating || 5))),
-                      "bestRating": "5",
-                      "worstRating": "1"
-                    },
-                    "reviewBody": `Excelente obra "${book.title}" por ${book.author}. Leitura indispensável disponível no catálogo digital da Zola Books.`
-                  }
-                ]
-              }))
-            ]
-          })}
-        </script>
-      </Helmet>
-
       {/* Scroll Progress Bar */}
       <motion.div
         className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 z-[100] origin-left shadow-sm shadow-amber-500/50 pointer-events-none"

@@ -31,8 +31,10 @@ import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import { uploadUserAvatar } from '../lib/firebase';
 import { SecurityBackupSection } from './SecurityBackupSection';
+import { AccountDataExportCard } from './AccountDataExportCard';
 import { AndroidStorageManagerSection } from './AndroidStorageManagerSection';
 import { OfflineCacheSettingsSection } from './OfflineCacheSettingsSection';
+import { ThemeToggleSwitch } from './ThemeToggleSwitch';
 
 export const UserProfileModal: React.FC = () => {
   const { 
@@ -355,6 +357,11 @@ export const UserProfileModal: React.FC = () => {
                     <span>Guardar Alterações</span>
                   </button>
                 </div>
+
+                {/* Utilitário de Exportação de Dados .JSON */}
+                <div className="pt-2">
+                  <AccountDataExportCard />
+                </div>
               </form>
             )}
 
@@ -477,22 +484,8 @@ export const UserProfileModal: React.FC = () => {
                 {/* Embedded Backup Shortcut Section */}
                 <SecurityBackupSection compact />
 
-                {/* Theme toggle */}
-                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {theme === 'dark' ? <Moon className="w-5 h-5 text-purple-400" /> : <Sun className="w-5 h-5 text-amber-400" />}
-                    <div>
-                      <div className="font-bold text-white">Tema Visual da Aplicação</div>
-                      <div className="text-[10px] text-slate-400">Alternar entre Modo Escuro (Dark) e Modo Claro (Light)</div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={toggleTheme}
-                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl transition-all"
-                  >
-                    {theme === 'dark' ? 'Ativar Modo Claro ☀️' : 'Ativar Modo Escuro 🌙'}
-                  </button>
-                </div>
+                {/* Global Theme Toggle Card (Persisted in Firestore) */}
+                <ThemeToggleSwitch variant="card" />
 
                 {/* Sound Feedback */}
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">

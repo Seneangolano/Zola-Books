@@ -6,9 +6,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // User sync data (purchases, favorites, reading progress, bookmarks)
+    // User sync data (reading progress, bookmarks, highlights, library, profile, and theme)
+    // Restrict access so only the authenticated user can read or write their own documents
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Restrict all user subcollections (e.g. readingProgress, bookmarks, highlights)
+      match /{subcollection=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Health / Connection test doc
@@ -17,4 +23,5 @@ service cloud.firestore {
     }
   }
 }
+
 

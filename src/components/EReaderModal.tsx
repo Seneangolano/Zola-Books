@@ -57,7 +57,8 @@ import {
   Columns,
   Layers,
   Highlighter,
-  Palette
+  Palette,
+  Info
 } from 'lucide-react';
 import { Book, Highlight, HighlightColor } from '../types';
 import { useApp } from '../context/AppContext';
@@ -65,6 +66,11 @@ import { parseEpubFile } from '../lib/epubParser';
 import { QuoteCardModal } from './QuoteCardModal';
 import { DictionaryPopup } from './DictionaryPopup';
 import { captureReadingError } from '../lib/sentry';
+import { 
+  EReaderLanguageSelector, 
+  READER_LANGUAGES, 
+  TranslationDisplayMode 
+} from './EReaderLanguageSelector';
 
 interface EReaderModalProps {
   book: Book;
@@ -657,8 +663,41 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
 
   const currentChapter = chapters[currentChapterIndex] || chapters[0];
 
-  // Split chapter into readable paragraphs for synchronized TTS highlighting
-  const paragraphs = React.useMemo(() => {
+  // Real-time Book Translation State (Full Chapter Translation via Gemini AI)
+  const [readerLanguage, setReaderLanguage] = useState<string>(() => {
+    return localStorage.getItem('zolabooks_ereader_language') || 'pt';
+  });
+  const [translationDisplayMode, setTranslationDisplayMode] = useState<TranslationDisplayMode>(() => {
+    return (localStorage.getItem('zolabooks_translation_display_mode') as TranslationDisplayMode) || 'translated';
+  });
+  const [translationCache, setTranslationCache] = useState<Record<string, { translatedTitle: string; translatedParagraphs: string[]; note?: string }>>(() => {
+    try {
+      const saved = sessionStorage.getItem(`zolabooks_trans_${book.id}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [isTranslatingChapter, setIsTranslatingChapter] = useState<boolean>(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+
+  // Sync translation preferences and session cache
+  useEffect(() => {
+    localStorage.setItem('zolabooks_ereader_language', readerLanguage);
+  }, [readerLanguage]);
+
+  useEffect(() => {
+    localStorage.setItem('zolabooks_translation_display_mode', translationDisplayMode);
+  }, [translationDisplayMode]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`zolabooks_trans_${book.id}`, JSON.stringify(translationCache));
+    } catch (_) {}
+  }, [translationCache, book.id]);
+
+  // Split chapter into readable paragraphs
+  const rawParagraphs = React.useMemo(() => {
     if (!currentChapter?.content) return [];
     const splitArr = currentChapter.content
       .split(/\n\s*\n/)
@@ -666,6 +705,93 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
       .filter(p => p.length > 0);
     return splitArr.length > 0 ? splitArr : [currentChapter.content];
   }, [currentChapter]);
+
+  const activeTranslationKey = `chap_${currentChapterIndex}_${readerLanguage}`;
+  const activeChapterTranslation = useMemo(() => {
+    if (readerLanguage === 'pt') return null;
+    return translationCache[activeTranslationKey] || null;
+  }, [translationCache, activeTranslationKey, readerLanguage]);
+
+  const isTranslatedMode = readerLanguage !== 'pt' && translationDisplayMode === 'translated' && !!activeChapterTranslation;
+  const isBilingualMode = readerLanguage !== 'pt' && translationDisplayMode === 'bilingual' && !!activeChapterTranslation;
+
+  // Active paragraphs (translated or original)
+  const paragraphs = useMemo(() => {
+    if (isTranslatedMode && activeChapterTranslation?.translatedParagraphs?.length) {
+      return activeChapterTranslation.translatedParagraphs;
+    }
+    return rawParagraphs;
+  }, [isTranslatedMode, activeChapterTranslation, rawParagraphs]);
+
+  const currentChapterDisplayTitle = useMemo(() => {
+    if (readerLanguage !== 'pt' && activeChapterTranslation?.translatedTitle) {
+      return activeChapterTranslation.translatedTitle;
+    }
+    return currentChapter.title;
+  }, [readerLanguage, activeChapterTranslation, currentChapter]);
+
+  const translateCurrentChapter = async (forceRefresh: boolean = false) => {
+    if (readerLanguage === 'pt') return;
+    const langObj = READER_LANGUAGES.find(l => l.code === readerLanguage);
+    if (!langObj) return;
+
+    const cacheKey = `chap_${currentChapterIndex}_${readerLanguage}`;
+    if (!forceRefresh && translationCache[cacheKey]) {
+      return;
+    }
+
+    if (rawParagraphs.length === 0) return;
+
+    setIsTranslatingChapter(true);
+    setTranslationError(null);
+
+    try {
+      const response = await fetch('/api/ai/translate-chapter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chapterTitle: currentChapter.title || `Capítulo ${currentChapterIndex + 1}`,
+          paragraphs: rawParagraphs,
+          targetLanguage: langObj.name,
+          sourceLanguage: 'Português',
+          bookTitle: book.title,
+          author: book.author
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && Array.isArray(data.translatedParagraphs)) {
+        setTranslationCache(prev => ({
+          ...prev,
+          [cacheKey]: {
+            translatedTitle: data.translatedTitle || `${currentChapter.title} (${langObj.name})`,
+            translatedParagraphs: data.translatedParagraphs,
+            note: data.culturalNote
+          }
+        }));
+        addNotification(
+          `Capítulo Traduzido 🌐`,
+          `Capítulo traduzido para ${langObj.nativeName} preservando a formatação original.`,
+          'success'
+        );
+      } else {
+        throw new Error(data.error || 'Falha ao traduzir o capítulo.');
+      }
+    } catch (err: any) {
+      console.error('Erro na tradução do capítulo:', err);
+      setTranslationError(err?.message || 'Não foi possível traduzir o capítulo.');
+      addNotification('Erro na Tradução', 'Não foi possível traduzir o capítulo no momento.', 'system');
+    } finally {
+      setIsTranslatingChapter(false);
+    }
+  };
+
+  // Automatically trigger chapter translation when chapter or language changes
+  useEffect(() => {
+    if (readerLanguage !== 'pt') {
+      translateCurrentChapter(false);
+    }
+  }, [currentChapterIndex, readerLanguage]);
 
   // Load browser speech synthesis voices
   useEffect(() => {
@@ -1096,14 +1222,20 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
     setIsPaused(false);
     setShowTtsDock(true);
 
-    const paragraphText = paragraphs[index];
+    const currentLangObj = READER_LANGUAGES.find(l => l.code === readerLanguage) || READER_LANGUAGES[0];
+    const paragraphText = (isTranslatedMode && activeChapterTranslation?.translatedParagraphs?.[index])
+      ? activeChapterTranslation.translatedParagraphs[index]
+      : (isBilingualMode && activeChapterTranslation?.translatedParagraphs?.[index])
+        ? activeChapterTranslation.translatedParagraphs[index]
+        : (paragraphs[index] || rawParagraphs[index]);
+
     const utterance = new SpeechSynthesisUtterance(paragraphText);
 
     if (selectedVoiceURI) {
       const chosenVoice = speechVoices.find(v => v.voiceURI === selectedVoiceURI);
       if (chosenVoice) utterance.voice = chosenVoice;
     } else {
-      utterance.lang = book.language === 'Português' ? 'pt-PT' : 'en-US';
+      utterance.lang = currentLangObj.ttsCode || (book.language === 'Português' ? 'pt-PT' : 'en-US');
     }
 
     utterance.rate = speechRate;
@@ -1396,7 +1528,18 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
                 <span className="hidden md:inline">Dicionário</span>
               </button>
 
-              {/* Instant Translation Button */}
+              {/* Real-time Language & Translation Selector */}
+              <EReaderLanguageSelector
+                currentLanguageCode={readerLanguage}
+                onSelectLanguage={(code) => setReaderLanguage(code)}
+                displayMode={translationDisplayMode}
+                onSelectDisplayMode={(mode) => setTranslationDisplayMode(mode)}
+                isTranslating={isTranslatingChapter}
+                onRefreshTranslation={() => translateCurrentChapter(true)}
+                compact={true}
+              />
+
+              {/* Instant Translation Modal Button */}
               <button
                 onClick={() => {
                   setShowTranslateModal(true);
@@ -1407,10 +1550,10 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
                 className={`p-2 rounded-xl transition-colors flex items-center gap-1 ${
                   showTranslateModal ? 'bg-amber-500 text-slate-950 font-bold' : 'hover:bg-current/10'
                 }`}
-                title="Tradução Instantânea de Texto"
+                title="Tradução Instantânea de Trechos Selecionados"
               >
                 <Languages className="w-4 h-4 text-amber-500" />
-                <span className="hidden md:inline">Traduzir</span>
+                <span className="hidden md:inline">Traduzir Trecho</span>
               </button>
 
               {/* Quote Card Generator Button */}
@@ -1694,6 +1837,68 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
                               Noite
                             </button>
                           </div>
+                        </div>
+
+                        {/* 6. Idioma e Tradução em Tempo Real */}
+                        <div className="space-y-2 pt-1 border-t border-slate-800">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                              <Globe className="w-3.5 h-3.5 text-amber-500" /> Idioma do E-Book
+                            </span>
+                            {isTranslatingChapter && (
+                              <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin" /> A traduzir...
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={readerLanguage}
+                              onChange={(e) => {
+                                const newLang = e.target.value;
+                                setReaderLanguage(newLang);
+                                if (newLang !== 'pt' && translationDisplayMode === 'original') {
+                                  setTranslationDisplayMode('translated');
+                                }
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500"
+                            >
+                              {READER_LANGUAGES.map((l) => (
+                                <option key={l.code} value={l.code} className="bg-slate-900 text-white">
+                                  {l.flag} {l.name} ({l.nativeName})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {readerLanguage !== 'pt' && (
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[11px] text-slate-400 font-medium">Modo de Exibição</span>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  onClick={() => setTranslationDisplayMode('translated')}
+                                  className={`py-1.5 px-2 rounded-xl border text-[11px] font-bold transition-all ${
+                                    translationDisplayMode === 'translated'
+                                      ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  Texto Traduzido
+                                </button>
+                                <button
+                                  onClick={() => setTranslationDisplayMode('bilingual')}
+                                  className={`py-1.5 px-2 rounded-xl border text-[11px] font-bold transition-all ${
+                                    translationDisplayMode === 'bilingual'
+                                      ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  Bilíngue (Lado a Lado)
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Footer / Reset */}
@@ -2812,16 +3017,142 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
                   ) : null}
                 </div>
                 <h1 className={`font-black mt-1 ${isTotalImmersion || isZenMode ? 'text-3xl sm:text-5xl' : 'text-2xl sm:text-3xl'}`}>
-                  {currentChapter.title}
+                  {currentChapterDisplayTitle}
                 </h1>
               </div>
+
+              {/* Real-time Chapter Translation Status Banner */}
+              {readerLanguage !== 'pt' && (
+                <div className="space-y-3">
+                  {isTranslatingChapter ? (
+                    <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 text-amber-400 animate-spin shrink-0" />
+                        <div>
+                          <p className="text-xs font-bold text-amber-300">
+                            A traduzir capítulo para {READER_LANGUAGES.find(l => l.code === readerLanguage)?.nativeName} em tempo real...
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            Gemini 3.7 Flash a preservar estrutura de parágrafos, diálogos e fidelidade literária.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setReaderLanguage('pt')}
+                        className="text-[11px] font-bold text-slate-400 hover:text-white px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 shrink-0"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : translationError ? (
+                    <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-rose-300">
+                        <Info className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>Erro na tradução: {translationError}</span>
+                      </div>
+                      <button
+                        onClick={() => translateCurrentChapter(true)}
+                        className="px-3 py-1 bg-rose-500 text-slate-950 font-bold rounded-xl hover:bg-rose-400 transition-colors shrink-0 flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Tentar Novamente
+                      </button>
+                    </div>
+                  ) : activeChapterTranslation ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-300">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{READER_LANGUAGES.find(l => l.code === readerLanguage)?.flag}</span>
+                        <span className="font-bold">
+                          Traduzido para {READER_LANGUAGES.find(l => l.code === readerLanguage)?.name}
+                        </span>
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold uppercase">
+                          {translationDisplayMode === 'bilingual' ? 'Modo Bilíngue (Lado a Lado)' : 'Tradução Fluida'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setTranslationDisplayMode(translationDisplayMode === 'bilingual' ? 'translated' : 'bilingual')}
+                          className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] font-bold text-slate-300 hover:text-white transition-all flex items-center gap-1"
+                          title="Alternar entre modo bilíngue ou leitura contínua traduzida"
+                        >
+                          <Columns className="w-3 h-3 text-amber-400" />
+                          <span>{translationDisplayMode === 'bilingual' ? 'Ver só Tradução' : 'Modo Bilíngue'}</span>
+                        </button>
+                        <button
+                          onClick={() => setReaderLanguage('pt')}
+                          className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] font-bold text-slate-400 hover:text-amber-400 transition-all flex items-center gap-1"
+                          title="Restaurar texto original em Português"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Original (PT)</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               <div 
                 className={`leading-relaxed space-y-6 transition-all ${getFontFamilyClass()}`}
                 style={{ fontSize: `${isTotalImmersion || isZenMode ? fontSize + 2 : fontSize}px`, lineHeight: `${lineHeight}` }}
               >
-                {paragraphs.map((para, idx) => {
+                {rawParagraphs.map((origPara, idx) => {
                   const isCurrentPara = idx === currentSpeakingParagraphIndex;
+                  const translatedPara = activeChapterTranslation?.translatedParagraphs?.[idx];
+                  const displayedText = (isTranslatedMode && translatedPara) ? translatedPara : origPara;
+
+                  if (isBilingualMode && translatedPara) {
+                    return (
+                      <div
+                        key={idx}
+                        id={`reader-paragraph-${idx}`}
+                        className={`group relative transition-all duration-300 rounded-2xl p-4 border space-y-3 ${
+                          isCurrentPara
+                            ? 'bg-amber-500/15 border-amber-500 shadow-xl ring-1 ring-amber-500/30'
+                            : 'bg-current/5 border-current/10 hover:border-amber-500/30'
+                        }`}
+                      >
+                        {/* Original Paragraph Block */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px] uppercase font-black tracking-wider text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <span>🇦🇴</span> Original (Português)
+                            </span>
+                          </div>
+                          <p 
+                            onDoubleClick={() => handleParagraphDoubleClick(origPara)}
+                            className="whitespace-pre-line cursor-pointer opacity-80"
+                          >
+                            {renderParagraphWithHighlights(origPara, currentChapterHighlights, idx)}
+                          </p>
+                        </div>
+
+                        {/* Translated Paragraph Block */}
+                        <div className="pt-3 border-t border-current/10 space-y-1">
+                          <div className="flex items-center justify-between text-[10px] uppercase font-black tracking-wider text-amber-400">
+                            <span className="flex items-center gap-1">
+                              <span>{READER_LANGUAGES.find(l => l.code === readerLanguage)?.flag}</span> 
+                              Tradução ({READER_LANGUAGES.find(l => l.code === readerLanguage)?.name})
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => playParagraph(idx)}
+                                className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-300 transition-colors"
+                                title="Ouvir parágrafo traduzido"
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p 
+                            onDoubleClick={() => handleParagraphDoubleClick(translatedPara)}
+                            className="whitespace-pre-line cursor-pointer font-medium"
+                          >
+                            {translatedPara}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div
@@ -2835,18 +3166,18 @@ export const EReaderModal: React.FC<EReaderModalProps> = ({ book, onClose }) => 
                     >
                       <div className="flex items-start justify-between gap-3">
                         <p 
-                          onDoubleClick={() => handleParagraphDoubleClick(para)}
+                          onDoubleClick={() => handleParagraphDoubleClick(displayedText)}
                           className="flex-1 whitespace-pre-line cursor-pointer selection:bg-amber-500/40"
                           title="Selecione um trecho para realçar com cores ou ver o Dicionário Pop-up"
                         >
-                          {renderParagraphWithHighlights(para, currentChapterHighlights, idx)}
+                          {renderParagraphWithHighlights(displayedText, currentChapterHighlights, idx)}
                         </p>
                         
                         <div className="flex items-center gap-1 shrink-0">
-                          {currentChapterHighlights.some(h => para.includes(h.text)) && (
+                          {currentChapterHighlights.some(h => displayedText.includes(h.text)) && (
                             <button
                               onClick={() => {
-                                const hl = currentChapterHighlights.find(h => para.includes(h.text));
+                                const hl = currentChapterHighlights.find(h => displayedText.includes(h.text));
                                 if (hl) {
                                   setSelectedHighlight(hl);
                                   setEditingHighlightNoteText(hl.note || '');

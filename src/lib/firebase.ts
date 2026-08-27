@@ -156,6 +156,16 @@ export function getFirebaseAuthErrorMessage(error: any): string {
       return 'Falha na ligação à rede. Verifique a sua ligação à internet.';
     case 'auth/too-many-requests':
       return 'Muitas tentativas falhadas. Aguarde um instante e tente novamente.';
+    case 'auth/operation-not-allowed':
+      return 'O método de autenticação por e-mail/palavra-passe não está ativado no Firebase Console (Authentication > Sign-in method). Ative o provedor Email/Password no console do Firebase.';
+    case 'auth/unauthorized-domain':
+      return 'Domínio de publicação não autorizado no Firebase. Para permitir login na Vercel ou domínio personalizado, adicione o seu domínio em Firebase Console > Authentication > Settings > Authorized Domains.';
+    case 'auth/user-disabled':
+      return 'Esta conta de utilizador foi desativada pelo administrador.';
+    case 'auth/account-exists-with-different-credential':
+      return 'Já existe uma conta registada com este endereço de e-mail usando outro método de acesso (Google ou Palavra-passe).';
+    case 'auth/requires-recent-login':
+      return 'Esta operação requer uma autenticação recente. Por favor, termine sessão e volte a entrar.';
     default:
       return error?.message || 'Ocorreu um erro na autenticação. Tente novamente.';
   }
@@ -248,31 +258,42 @@ export interface UserSyncData {
   readingProgressMap?: Record<string, BookProgress>;
   bookmarks?: Bookmark[];
   highlights?: Highlight[];
+  theme?: 'dark' | 'light';
   updatedAt?: any;
   lastSyncedAt?: string;
 }
 
 /**
- * Normalizes user ID or email into a valid Firestore doc key
+ * Normalizes user ID or email into a valid Firestore doc key, prioritizing auth.currentUser.uid
  */
-const getDocId = (userIdOrEmail: string): string => {
-  return userIdOrEmail.replace(/[/.]/g, '_').toLowerCase();
+const getDocId = (userIdOrEmail?: string): string | null => {
+  if (auth.currentUser && auth.currentUser.uid) {
+    return auth.currentUser.uid;
+  }
+  return null;
 };
 
 /**
- * Saves or updates user library, favorites, reading progress, bookmarks, and highlights in Firestore
+ * Saves or updates user library, favorites, reading progress, bookmarks, highlights, and theme in Firestore.
+ * Requires an active Firebase Auth user session to comply with firestore.rules security boundaries.
  */
 export async function syncUserDataToFirestore(userData: UserSyncData): Promise<void> {
-  if (!userData || !userData.id) return;
-  const docId = getDocId(userData.id);
+  if (!userData) return;
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) {
+    // User is offline or using local demo profile; skip remote Firestore sync
+    return;
+  }
+
+  const docId = currentUid;
   const path = `users/${docId}`;
   try {
     const userRef = doc(db, 'users', docId);
     
-    await setDoc(userRef, {
-      id: userData.id,
-      name: userData.name || 'Leitor Zola',
-      email: userData.email || '',
+    const updatePayload: Record<string, any> = {
+      id: docId,
+      name: userData.name || auth.currentUser?.displayName || 'Leitor Zola',
+      email: userData.email || auth.currentUser?.email || '',
       role: userData.role || 'customer',
       purchasedBookIds: userData.purchasedBookIds || [],
       favoriteBookIds: userData.favoriteBookIds || [],
@@ -280,23 +301,36 @@ export async function syncUserDataToFirestore(userData: UserSyncData): Promise<v
       bookmarks: userData.bookmarks || [],
       highlights: userData.highlights || [],
       updatedAt: serverTimestamp()
-    }, { merge: true });
-  } catch (error) {
+    };
+
+    if (userData.theme) {
+      updatePayload.theme = userData.theme;
+    }
+    
+    await setDoc(userRef, updatePayload, { merge: true });
+  } catch (error: any) {
+    // If the session expired or permissions were denied, log gracefully without breaking the UI
+    if (error?.code === 'permission-denied' || error?.message?.includes('insufficient permissions')) {
+      console.warn('Sincronização Firestore ignorada (sessão não autorizada ou utilizador local):', error?.message);
+      return;
+    }
     console.error('Erro ao sincronizar dados com Firestore:', error);
     try {
       handleFirestoreError(error, OperationType.WRITE, path);
     } catch {
-      // rethrow or handle handled
+      // Handled
     }
   }
 }
 
 /**
- * Fetches user sync data from Firestore once
+ * Fetches user sync data from Firestore once (requires authenticated user)
  */
-export async function fetchUserDataFromFirestore(userIdOrEmail: string): Promise<UserSyncData | null> {
-  if (!userIdOrEmail) return null;
-  const docId = getDocId(userIdOrEmail);
+export async function fetchUserDataFromFirestore(userIdOrEmail?: string): Promise<UserSyncData | null> {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return null;
+  
+  const docId = currentUid;
   const path = `users/${docId}`;
   try {
     const userRef = doc(db, 'users', docId);
@@ -304,7 +338,11 @@ export async function fetchUserDataFromFirestore(userIdOrEmail: string): Promise
     if (snap.exists()) {
       return snap.data() as UserSyncData;
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || error?.message?.includes('insufficient permissions')) {
+      console.warn('Procura de dados Firestore ignorada (sem permissão ativa):', error?.message);
+      return null;
+    }
     console.error('Erro ao procurar dados no Firestore:', error);
   }
   return null;
@@ -317,9 +355,10 @@ export function subscribeToUserSyncData(
   userIdOrEmail: string, 
   onUpdate: (data: UserSyncData) => void
 ) {
-  if (!userIdOrEmail) return () => {};
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return () => {};
   
-  const docId = getDocId(userIdOrEmail);
+  const docId = currentUid;
   const path = `users/${docId}`;
   const userRef = doc(db, 'users', docId);
 
@@ -329,7 +368,11 @@ export function subscribeToUserSyncData(
       onUpdate(data);
     }
   }, (err) => {
-    console.warn('Snapshot listener error em Firestore:', err);
+    if (err?.code === 'permission-denied') {
+      console.warn('Snapshot listener Firestore pausado: aguardando autenticação ativa.');
+    } else {
+      console.warn('Snapshot listener error em Firestore:', err);
+    }
   });
 }
 

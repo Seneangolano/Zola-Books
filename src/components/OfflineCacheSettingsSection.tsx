@@ -67,7 +67,7 @@ export const OfflineCacheSettingsSection: React.FC = () => {
         togglePinBookForOffline(book.id);
       }
       if (!isBookOfflineCached(book.id)) {
-        downloadBookForOffline(book.id);
+        downloadBookForOffline(book);
       }
     });
     addNotification(
@@ -265,7 +265,7 @@ export const OfflineCacheSettingsSection: React.FC = () => {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => downloadBookForOffline(book.id)}
+                        onClick={() => downloadBookForOffline(book)}
                         disabled={isDownloading}
                         className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-1.5 disabled:opacity-50"
                       >
@@ -343,6 +343,120 @@ export const OfflineCacheSettingsSection: React.FC = () => {
             />
           </label>
         </div>
+      </div>
+
+      {/* Image & Cover Stale-While-Revalidate Cache Section */}
+      <ImageCacheStatusBox />
+    </div>
+  );
+};
+
+const ImageCacheStatusBox: React.FC = () => {
+  const {
+    imageCacheStats,
+    isPrefetchingImages,
+    prefetchImagesProgress,
+    prefetchAllCatalogImages,
+    clearImageCache,
+    refreshImageCacheStats
+  } = useApp();
+
+  return (
+    <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <Sparkles className="w-4 h-4" />
+          </span>
+          <div>
+            <h4 className="text-xs font-bold text-white flex items-center gap-2">
+              Cache de Capas &amp; Fotos (Stale-While-Revalidate)
+              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-mono px-1.5 py-0.5 rounded border border-emerald-500/30">
+                ⚡ 3G Instantâneo
+              </span>
+            </h4>
+            <p className="text-[11px] text-slate-400">
+              Imagens do Firebase Storage e catálogo são servidas do cache local em 0ms e atualizadas em segundo plano.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => refreshImageCacheStats()}
+          className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+          title="Atualizar diagnóstico do cache"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+          <span className="text-[10px] text-slate-400 block">Capas no Cache API</span>
+          <span className="text-sm font-black text-amber-400 font-mono">
+            {imageCacheStats.cachedImagesCount}
+          </span>
+        </div>
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+          <span className="text-[10px] text-slate-400 block">Espaço Estimado</span>
+          <span className="text-sm font-black text-emerald-400 font-mono">
+            {imageCacheStats.estimatedSizeMb} MB
+          </span>
+        </div>
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+          <span className="text-[10px] text-slate-400 block">Rede Detetada</span>
+          <span className="text-sm font-black text-sky-400 uppercase font-mono">
+            {imageCacheStats.networkEffectiveType || '4G'}
+          </span>
+        </div>
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+          <span className="text-[10px] text-slate-400 block">Service Worker</span>
+          <span className={`text-xs font-bold ${imageCacheStats.isServiceWorkerReady ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {imageCacheStats.isServiceWorkerReady ? 'Ativo ⚡' : 'Pronto 🟢'}
+          </span>
+        </div>
+      </div>
+
+      {prefetchImagesProgress && (
+        <div className="space-y-1 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+          <div className="flex justify-between text-[11px] text-slate-300">
+            <span>A descarregar capas para acesso offline 3G...</span>
+            <span className="font-mono text-amber-400 font-bold">{prefetchImagesProgress.percent}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-200"
+              style={{ width: `${prefetchImagesProgress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-1 gap-2">
+        <button
+          type="button"
+          onClick={() => prefetchAllCatalogImages()}
+          disabled={isPrefetchingImages}
+          className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+        >
+          {isPrefetchingImages ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Download className="w-3.5 h-3.5" />
+          )}
+          <span>{isPrefetchingImages ? 'A Pré-carregar...' : 'Pré-carregar Todas as Capas'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => clearImageCache()}
+          className="py-2 px-3 bg-slate-900 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+          title="Limpar apenas cache de imagens"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Limpar Imagens</span>
+        </button>
       </div>
     </div>
   );

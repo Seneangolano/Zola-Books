@@ -18,8 +18,6 @@ import { getOptimizedBookCover } from '../lib/imageOptimizer';
 
 export const HeroBanner: React.FC = () => {
   const { setActiveView, setIsZolaAIOpen, setSelectedBookModal, addToCart, formatPrice, books } = useApp();
-
-  const flashSaleBooks = books.filter(b => b.isFlashSale);
   const [currentFlashIndex, setCurrentFlashIndex] = useState(0);
 
   // Countdown timer state
@@ -28,6 +26,8 @@ export const HeroBanner: React.FC = () => {
     minutes: 28,
     seconds: 45,
   });
+
+  const flashSaleBooks = books.filter(b => b.isFlashSale);
 
   useEffect(() => {
     const timer = setInterval(() => {

@@ -26,6 +26,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { UserRole, Currency } from '../types';
 import { VoiceSearchButton } from './VoiceSearchButton';
+import { ThemeToggleSwitch } from './ThemeToggleSwitch';
 
 export const Header: React.FC = () => {
   const {
@@ -220,24 +221,8 @@ export const Header: React.FC = () => {
               </select>
             </div>
 
-            {/* Theme Selector (Light / Dark Toggle) */}
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition-all flex items-center gap-1.5 text-xs font-semibold"
-              title={theme === 'dark' ? 'Alternar para Modo Claro' : 'Alternar para Modo Escuro'}
-            >
-              {theme === 'dark' ? (
-                <>
-                  <Sun className="w-4 h-4 text-amber-400" />
-                  <span className="hidden md:inline text-slate-200">Claro</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-4 h-4 text-amber-500" />
-                  <span className="hidden md:inline text-slate-800">Escuro</span>
-                </>
-              )}
-            </button>
+            {/* Theme Selector (Global Dark / Light Mode Switch) */}
+            <ThemeToggleSwitch variant="compact" showLabel />
 
             {/* Accessibility & Sound Feedback Button */}
             <button
@@ -635,6 +620,13 @@ export const Header: React.FC = () => {
             >
               Programa de Afiliados
             </button>
+            <div className="py-2 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-200">
+                <Sun className="w-4 h-4 text-amber-400" />
+                <span>Tema da Aplicação</span>
+              </div>
+              <ThemeToggleSwitch variant="switch" showLabel={false} />
+            </div>
             <button
               onClick={() => { setIsAccessibilityModalOpen(true); setIsMobileMenuOpen(false); }}
               className="text-left py-2 hover:text-amber-400 border-b border-slate-800 flex items-center justify-between text-amber-300 font-bold"

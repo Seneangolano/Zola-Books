@@ -49,6 +49,7 @@ import { SocialFeed } from './SocialFeed';
 import { ReadingAnalyticsChart } from './ReadingAnalyticsChart';
 import { parseEpubFile } from '../lib/epubParser';
 import { SecurityBackupSection } from './SecurityBackupSection';
+import { AccountDataExportCard } from './AccountDataExportCard';
 import { OfflineCacheSettingsSection } from './OfflineCacheSettingsSection';
 import { AndroidStorageManagerSection } from './AndroidStorageManagerSection';
 
@@ -1851,6 +1852,7 @@ export const CustomerDashboard: React.FC = () => {
           </div>
 
           {/* Security Backup & Disaster Recovery Card */}
+          <AccountDataExportCard />
           <SecurityBackupSection />
 
           {/* Accessibility Sound Feedback Card in Profile */}

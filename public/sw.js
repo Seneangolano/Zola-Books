@@ -92,54 +92,76 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Image Requests (Book Covers, Author Avatars, Unsplash, Cloudinary, Local WebP/PNG)
+  // B. Image Requests (Firebase Storage, Book Covers, Author Avatars, Unsplash, Cloudinary, WebP/PNG)
   const isImageRequest = 
     request.destination === 'image' ||
-    url.pathname.includes('/covers/') ||
-    url.pathname.includes('/avatars/') ||
-    url.pathname.includes('/ebooks/') ||
+    url.hostname.includes('firebasestorage.googleapis.com') ||
+    url.hostname.includes('storage.googleapis.com') ||
+    url.hostname.includes('googleusercontent.com') ||
+    url.hostname.includes('firebaseapp.com') ||
     url.hostname.includes('unsplash.com') ||
     url.hostname.includes('cloudinary.com') ||
     url.hostname.includes('images.unsplash.com') ||
+    url.pathname.includes('/covers/') ||
+    url.pathname.includes('/avatars/') ||
+    url.pathname.includes('/ebooks/') ||
+    url.pathname.includes('/o/') ||
     /\.(png|jpg|jpeg|webp|svg|gif|ico|avif)(\?.*)?$/i.test(url.pathname);
 
   if (isImageRequest) {
     event.respondWith(
       caches.open(IMAGES_CACHE).then(async (cache) => {
-        // 1. Check if image exists in Cache API (instant load for 3G!)
+        // Stale-While-Revalidate Strategy:
+        // 1. Check if the image exists in Cache API for instant 0ms load
         const cachedResponse = await cache.match(request, { ignoreSearch: false });
+
+        // 2. Revalidation fetch promise to refresh cache in background
+        const revalidatePromise = fetch(request.url, {
+          mode: request.mode === 'navigate' ? 'navigate' : 'cors',
+          credentials: 'omit'
+        }).then((freshResponse) => {
+          if (freshResponse && (freshResponse.status === 200 || freshResponse.type === 'opaque')) {
+            // Asynchronously update cache with the fresh image
+            cache.put(request, freshResponse.clone()).catch((cacheErr) => {
+              console.warn('[Zola SW] Aviso no cache de imagem em background:', cacheErr);
+            });
+          }
+          return freshResponse;
+        }).catch((err) => {
+          // Network failure on offline/unstable 3G (expected)
+          return null;
+        });
+
+        // 3. If cached, serve stale response immediately and revalidate in background
         if (cachedResponse) {
+          if (event.waitUntil) {
+            event.waitUntil(revalidatePromise);
+          }
           return cachedResponse;
         }
 
-        // 2. If not cached, fetch over network with 3G timeout protection
+        // 4. If not in cache, wait for network response with 3G timeout guard
         try {
-          const fetchPromise = fetch(request.url, {
-            mode: request.mode === 'navigate' ? 'navigate' : 'cors',
-            credentials: 'omit'
-          });
-
-          // Abort/fallback if network hangs on ultra-slow connection
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Image fetch timeout on slow 3G')), 12000)
+            setTimeout(() => reject(new Error('Image fetch timeout on slow 3G')), 10000)
           );
 
-          const response = await Promise.race([fetchPromise, timeoutPromise]);
+          const networkResponse = await Promise.race([revalidatePromise, timeoutPromise]);
 
-          if (response && (response.status === 200 || response.type === 'opaque')) {
-            // Asynchronously store in cache for all subsequent loads
-            cache.put(request, response.clone()).catch((cacheErr) => {
-              console.warn('[Zola SW] Não foi possível guardar imagem no cache:', cacheErr);
-            });
-            return response;
+          if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
+            return networkResponse;
           }
-          return response;
-        } catch (fetchErr) {
-          // If offline or network dropped on 3G, try matching ignoring query params or fallback
+
+          // Fallback matching without query parameters
           const fallbackMatch = await cache.match(url.pathname, { ignoreSearch: true });
           if (fallbackMatch) return fallbackMatch;
 
-          // Return elegant SVG placeholder instead of broken image
+          // Return clean SVG placeholder
+          return createFallbackImageResponse();
+        } catch (fetchErr) {
+          const fallbackMatch = await cache.match(url.pathname, { ignoreSearch: true });
+          if (fallbackMatch) return fallbackMatch;
+
           return createFallbackImageResponse();
         }
       })

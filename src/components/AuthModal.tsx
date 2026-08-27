@@ -59,11 +59,12 @@ export const AuthModal: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail.trim()) return;
+    const cleanEmail = loginEmail.trim();
+    if (!cleanEmail) return;
     setErrorMsg(null);
     setLoading(true);
     try {
-      await login(loginEmail, loginPassword);
+      await login(cleanEmail, loginPassword);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro ao iniciar sessão.');
     } finally {
@@ -73,7 +74,21 @@ export const AuthModal: React.FC = () => {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regName.trim() || !regEmail.trim()) return;
+    const cleanEmail = regEmail.trim();
+    const cleanName = regName.trim();
+
+    if (!cleanName) {
+      setErrorMsg('Por favor insira o seu nome completo.');
+      return;
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMsg('Por favor insira um endereço de e-mail válido.');
+      return;
+    }
+    if (!regPassword || regPassword.length < 6) {
+      setErrorMsg('A palavra-passe deve conter pelo menos 6 caracteres.');
+      return;
+    }
     if (!agreedTerms) {
       addNotification('Termos Necessários', 'Por favor aceite os termos de serviço para criar a sua conta.');
       return;
@@ -82,10 +97,10 @@ export const AuthModal: React.FC = () => {
     setLoading(true);
     try {
       await registerUser({
-        name: regName,
-        email: regEmail,
+        name: cleanName,
+        email: cleanEmail,
         password: regPassword,
-        phone: regPhone.startsWith('+244') ? regPhone : `+244 ${regPhone}`,
+        phone: regPhone.startsWith('+244') ? regPhone : `+244 ${regPhone.trim()}`,
         role: regRole,
         avatarUrl: regRole === 'author' 
           ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'

@@ -51,9 +51,9 @@ export const AdminPdfReportModal: React.FC<AdminPdfReportModalProps> = ({ isOpen
   const averageTicketAOA = completedOrders.length > 0 ? totalSalesAOA / completedOrders.length : 0;
 
   // Payment methods breakdown
-  const multicaixaCount = completedOrders.filter(o => o.paymentMethod === 'express' || o.paymentMethod === 'multicaixa').length;
-  const ibanCount = completedOrders.filter(o => o.paymentMethod === 'iban').length;
-  const stripeCount = completedOrders.filter(o => o.paymentMethod === 'stripe').length;
+  const multicaixaCount = completedOrders.filter(o => o.paymentMethod === 'multicaixa_express' || o.paymentMethod === 'mcx_reference' || (o.paymentMethod as any) === 'express' || (o.paymentMethod as any) === 'multicaixa').length;
+  const ibanCount = completedOrders.filter(o => o.paymentMethod === 'iban_transfer' || (o.paymentMethod as any) === 'iban').length;
+  const stripeCount = completedOrders.filter(o => o.paymentMethod === 'stripe_card' || o.paymentMethod === 'paypal' || (o.paymentMethod as any) === 'stripe').length;
 
   const currentDateStr = new Date().toLocaleDateString('pt-AO', {
     day: '2-digit',

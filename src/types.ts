@@ -124,6 +124,7 @@ export interface User {
   followedAuthors?: string[];
   readingProgressMap?: Record<string, BookProgress>;
   dailyReminderSettings?: DailyReminderSettings;
+  theme?: 'dark' | 'light';
   createdAt: string;
 }
 
@@ -186,7 +187,7 @@ export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  type: 'order' | 'system' | 'royalties' | 'promotion';
+  type: 'order' | 'system' | 'royalties' | 'promotion' | 'success' | 'badge' | 'reward';
   read: boolean;
   date: string;
   orderId?: string;

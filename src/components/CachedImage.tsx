@@ -32,7 +32,8 @@ export const CachedImage: React.FC<CachedImageProps> = ({
     if (!src) return fallbackSrc;
     if (sizePreset === 'raw') return src;
     if (widthPx) return getOptimizedImageUrl(src, widthPx);
-    return getOptimizedBookCover(src, sizePreset);
+    const validPreset: 'card' | 'thumb' | 'hd' = (sizePreset === 'thumb' || sizePreset === 'hd') ? sizePreset : 'card';
+    return getOptimizedBookCover(src, validPreset);
   }, [src, sizePreset, widthPx, fallbackSrc]);
 
   // Check if image is available in Cache API for instant indication
@@ -71,7 +72,7 @@ export const CachedImage: React.FC<CachedImageProps> = ({
         }}
         className={`w-full h-full object-cover transition-opacity duration-300 ${
           isLoaded ? 'opacity-100' : 'opacity-0'
-        } ${props.className || ''}`}
+        }`}
         {...props}
       />
 

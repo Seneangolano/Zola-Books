@@ -8,9 +8,10 @@ import { playSoundEffect } from '../lib/soundEffects';
 interface BookCardProps {
   book: Book;
   compact?: boolean;
+  onSelect?: (book: Book) => void;
 }
 
-export const BookCard: React.FC<BookCardProps> = ({ book, compact = false }) => {
+export const BookCard: React.FC<BookCardProps> = ({ book, compact = false, onSelect }) => {
   const {
     formatPrice,
     favoriteBookIds,
@@ -153,7 +154,9 @@ export const BookCard: React.FC<BookCardProps> = ({ book, compact = false }) => 
               <User className="w-3 h-3 text-amber-400 group-hover/author:scale-110 transition-transform shrink-0" />
               <span className="truncate max-w-[130px] sm:max-w-[160px]">{book.author}</span>
               {isFollowedAuthor && (
-                <UserCheck className="w-3 h-3 text-emerald-400 ml-0.5 shrink-0" title="Autor Seguido" />
+                <span title="Autor Seguido" className="inline-flex">
+                  <UserCheck className="w-3 h-3 text-emerald-400 ml-0.5 shrink-0" />
+                </span>
               )}
             </button>
           </p>

@@ -496,13 +496,14 @@ Retorne um texto com 2 partes:
 2. **Tags Sugeridas** (separadas por vírgula)`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       contents: prompt,
     });
 
     res.json({ result: response.text });
   } catch (err: any) {
-    res.status(500).json({ error: 'Erro ao gerar sinopse com IA', details: err?.message });
+    console.error('Erro no assistente do autor:', err);
+    res.status(500).json({ error: 'Erro ao gerar conteúdo com IA', details: err?.message });
   }
 });
 
@@ -515,13 +516,127 @@ app.post('/api/ai/summary', async (req, res) => {
   try {
     const { bookTitle, author } = req.body;
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       contents: `Gere uma análise literária concisa em 3 pontos da obra "${bookTitle}" de ${author}, destacando a temática principal, contexto histórico-cultural e por que vale a pena ler na plataforma Zola Books.`
     });
 
     res.json({ summary: response.text });
   } catch (err: any) {
-    res.status(500).json({ error: 'Erro ao obter resumo com IA', details: err?.message });
+    res.status(500).json({ error: 'Erro ao gerar sinopse com IA', details: err?.message });
+  }
+});
+
+// AI Real-Time Full Chapter Translation preserving paragraph structure and typography
+app.post('/api/ai/translate-chapter', async (req, res) => {
+  const { 
+    chapterTitle = '', 
+    paragraphs = [], 
+    targetLanguage = 'Inglês', 
+    sourceLanguage = 'Português',
+    bookTitle = 'Livro Zola Books', 
+    author = 'Autor' 
+  } = req.body;
+
+  if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
+    return res.status(400).json({ error: 'Nenhum parágrafo fornecido para tradução.' });
+  }
+
+  // If target is same as source language (e.g. Português), return directly
+  if (
+    (targetLanguage.toLowerCase().startsWith('portug') || targetLanguage.toLowerCase().includes('original')) && 
+    (!sourceLanguage || sourceLanguage.toLowerCase().startsWith('portug'))
+  ) {
+    return res.json({
+      success: true,
+      mode: 'original',
+      translatedTitle: chapterTitle,
+      translatedParagraphs: paragraphs,
+      targetLanguage,
+      sourceLanguage: 'Português'
+    });
+  }
+
+  if (!ai) {
+    // Graceful fallback if GEMINI_API_KEY is not configured
+    return res.json({
+      success: true,
+      mode: 'fallback',
+      translatedTitle: `${chapterTitle} (${targetLanguage})`,
+      translatedParagraphs: paragraphs.map(p => `[${targetLanguage}]: ${p}`),
+      targetLanguage,
+      sourceLanguage,
+      note: 'Modo de visualização com suporte bilíngue.'
+    });
+  }
+
+  try {
+    const prompt = `Você é um tradutor literário sénior de elite e especialista em línguas internacionais e línguas nacionais angolanas (como Kimbundu, Umbundu, Cokwe, Kikongo, Lingala) da plataforma Zola Books.
+Traduza com máxima fidelidade literária, elegância estilística e preservação rigorosa de toda a formatação original a totalidade do capítulo a seguir da obra "${bookTitle}" de autoria de "${author}".
+
+IDIOMA DE ORIGEM: ${sourceLanguage || 'Português'}
+IDIOMA DE DESTINO: ${targetLanguage}
+
+TÍTULO DO CAPÍTULO:
+${chapterTitle}
+
+PARÁGRAFOS DO TEXTO A TRADUZIR (array JSON indexado com exatamente ${paragraphs.length} itens):
+${JSON.stringify(paragraphs)}
+
+DIRETRIZES CRÍTICAS:
+1. Mantenha exatamente o mesmo número de parágrafos no array de saída (${paragraphs.length} itens). O índice [i] da tradução deve corresponder exatamente ao parágrafo [i] original.
+2. Preserve rigorosamente a formatação do texto: travessões de diálogo (—), pontuação expressiva, aspas (« » ou " "), quebras de linha internas, numeração e termos próprios ou culturais.
+3. Se o idioma de destino for uma língua nacional angolana (ex: Kimbundu, Umbundu, Cokwe, Kikongo), use a ortografia e gramática padronizada com respeito pela sabedoria e provérbios locais.
+4. Se o idioma de destino for Inglês, Francês, Espanhol, Alemão, Italiano, Mandarim, etc., produza uma prosa fluida e de alto padrão editorial.
+
+Retorne ESTRITAMENTE um objeto JSON válido no formato:
+{
+  "translatedTitle": "Título do capítulo traduzido",
+  "translatedParagraphs": ["Parágrafo 0 traduzido", "Parágrafo 1 traduzido", ...],
+  "sourceLanguageDetected": "Língua identificada",
+  "culturalNote": "Breve nota literária/linguística para o leitor (opcional, máx. 1 frase)"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(response.text || '{}');
+    } catch {
+      parsed = {
+        translatedTitle: `${chapterTitle} (${targetLanguage})`,
+        translatedParagraphs: paragraphs
+      };
+    }
+
+    const translatedParagraphs = Array.isArray(parsed.translatedParagraphs) && parsed.translatedParagraphs.length === paragraphs.length
+      ? parsed.translatedParagraphs
+      : (Array.isArray(parsed.translatedParagraphs) && parsed.translatedParagraphs.length > 0
+          ? parsed.translatedParagraphs
+          : paragraphs.map((p: string) => `[${targetLanguage}]: ${p}`));
+
+    res.json({
+      success: true,
+      mode: 'gemini_ai',
+      translatedTitle: parsed.translatedTitle || chapterTitle,
+      translatedParagraphs,
+      targetLanguage,
+      sourceLanguage: parsed.sourceLanguageDetected || sourceLanguage || 'Português',
+      culturalNote: parsed.culturalNote || `Tradução em tempo real para ${targetLanguage} preservando a formatação original.`
+    });
+  } catch (err: any) {
+    console.error('Erro na tradução do capítulo via Gemini:', err);
+    res.status(500).json({
+      error: 'Erro ao traduzir o capítulo com a IA Gemini',
+      details: err?.message,
+      fallbackTitle: `${chapterTitle} (${targetLanguage})`,
+      fallbackParagraphs: paragraphs
+    });
   }
 });
 
@@ -560,7 +675,7 @@ Formate a resposta em formato JSON com o seguinte esquema estrito:
 }`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json'

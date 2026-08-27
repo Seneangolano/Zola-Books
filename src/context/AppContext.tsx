@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Book, User, CartItem, Currency, Order, UserRole, AppNotification, SellerSaleNotification, BookClub, BookClubDiscussion, BookClubComment, BookProgress, Bookmark, Highlight, HighlightColor, UserSecurityBackup, SyncHistoryEntry } from '../types';
 import { MOCK_BOOKS, INITIAL_USERS, INITIAL_EXCHANGE_RATE, INITIAL_ORDERS, INITIAL_SELLER_SALES } from '../data/mockData';
 import { INITIAL_BOOK_CLUBS } from '../data/bookClubsData';
@@ -64,7 +64,7 @@ import {
   trackCartAction, 
   trackReaderAction 
 } from '../lib/sentry';
-import { parseTestPassToken } from '../components/TemporaryTestLinkModal';
+import { parseTestPassToken } from '../lib/testLinkUtils';
 
 interface AppContextType {
   // Books & Catalog
@@ -189,6 +189,7 @@ interface AppContextType {
   // Theme (Light / Dark Mode)
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  setThemeMode: (theme: 'dark' | 'light') => void;
 
   // Service Worker & Offline Reading
   isOnline: boolean;
@@ -410,6 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           affiliateEarningsUSD: existingLocal?.affiliateEarningsUSD || 0,
           purchasedBookIds: remoteData?.purchasedBookIds || existingLocal?.purchasedBookIds || ['ZB-BK-101'],
           favoriteBookIds: remoteData?.favoriteBookIds || existingLocal?.favoriteBookIds || [],
+          theme: remoteData?.theme || (localStorage.getItem('zolabooks_theme') as 'dark' | 'light') || 'dark',
           avatarUrl: fbUser.photoURL || existingLocal?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
           createdAt: existingLocal?.createdAt || new Date().toISOString()
         };
@@ -417,6 +419,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentUser(realUser);
         if (remoteData?.favoriteBookIds) {
           setFavoriteBookIds(remoteData.favoriteBookIds);
+        }
+        if (remoteData?.theme && (remoteData.theme === 'dark' || remoteData.theme === 'light')) {
+          setTheme(remoteData.theme);
         }
 
         // Sync real Firebase Auth user profile to Firestore
@@ -426,7 +431,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           email: realUser.email,
           role: realUser.role,
           purchasedBookIds: realUser.purchasedBookIds,
-          favoriteBookIds: realUser.favoriteBookIds
+          favoriteBookIds: realUser.favoriteBookIds,
+          theme: remoteData?.theme || theme
         });
       } else {
         const isAuthFlag = localStorage.getItem('zolabooks_is_auth') === 'true';
@@ -788,6 +794,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  // 3G Image & Cover Cache API (Stale-While-Revalidate)
+  const [imageCacheStats, setImageCacheStats] = useState<ImageCacheStats>({
+    cachedImagesCount: 0,
+    totalCatalogImages: 0,
+    estimatedSizeMb: 0,
+    coveragePercentage: 0,
+    isServiceWorkerReady: false,
+    networkEffectiveType: '4g',
+    isSaveDataActive: false,
+    lastUpdated: ''
+  });
+  const [isPrefetchingImages, setIsPrefetchingImages] = useState(false);
+  const [prefetchImagesProgress, setPrefetchImagesProgress] = useState<{ loaded: number; total: number; percent: number } | null>(null);
+
+  const refreshImageCacheStats = useCallback(async () => {
+    try {
+      const stats = await imagePrefetchService.getCacheStats(books);
+      setImageCacheStats(stats);
+    } catch (e) {
+      console.warn('Erro ao atualizar estatísticas de cache de imagens:', e);
+    }
+  }, [books]);
+
+  useEffect(() => {
+    refreshImageCacheStats();
+  }, [refreshImageCacheStats]);
+
+  const prefetchAllCatalogImages = async () => {
+    if (isPrefetchingImages) return;
+    setIsPrefetchingImages(true);
+    setPrefetchImagesProgress({ loaded: 0, total: books.length, percent: 0 });
+
+    try {
+      const result = await imagePrefetchService.prefetchCatalogImages(books, (progress) => {
+        setPrefetchImagesProgress(progress);
+      });
+
+      await refreshImageCacheStats();
+      addNotification(
+        'Capas e Imagens Pré-Carregadas ⚡',
+        `${result.cached} imagens e capas guardadas no Cache API. O marketplace e biblioteca carregarão instantaneamente mesmo em 3G instável!`,
+        'system'
+      );
+    } catch (err) {
+      console.error('Erro no pré-carregamento de imagens:', err);
+      addNotification(
+        'Aviso de Cache',
+        'Não foi possível concluir o pré-carregamento de algumas imagens.',
+        'system'
+      );
+    } finally {
+      setIsPrefetchingImages(false);
+      setPrefetchImagesProgress(null);
+    }
+  };
+
+  const clearImageCache = async () => {
+    try {
+      await imagePrefetchService.clearImageCache();
+      await refreshImageCacheStats();
+      addNotification(
+        'Cache de Imagens Limpo 🧹',
+        'O cache local de capas e fotos foi esvaziado. Novas imagens serão recarregadas sob demanda.',
+        'system'
+      );
+    } catch (err) {
+      console.error('Erro ao limpar cache de imagens:', err);
+    }
+  };
+
   // Reading Progress Engine
   const [readingProgressMap, setReadingProgressMap] = useState<Record<string, BookProgress>>(() => {
     try {
@@ -1080,19 +1156,124 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(checkReminderInterval);
   }, [currentUser.dailyReminderSettings, books]);
 
+  // Helper to dynamically update CSS variables and data attributes on :root
+  const applyThemeCssVariables = (themeMode: 'dark' | 'light') => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    
+    if (themeMode === 'light') {
+      root.classList.add('light');
+      root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+      root.style.colorScheme = 'light';
+      root.style.setProperty('--theme-mode', 'light');
+      root.style.setProperty('--bg-app', '#f8fafc');
+      root.style.setProperty('--bg-primary', '#ffffff');
+      root.style.setProperty('--bg-secondary', '#f1f5f9');
+      root.style.setProperty('--bg-tertiary', '#e2e8f0');
+      root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.98)');
+      root.style.setProperty('--bg-card-hover', 'rgba(241, 245, 249, 0.9)');
+      root.style.setProperty('--bg-input', '#f1f5f9');
+      root.style.setProperty('--text-primary', '#0f172a');
+      root.style.setProperty('--text-secondary', '#334155');
+      root.style.setProperty('--text-muted', '#64748b');
+      root.style.setProperty('--border-primary', '#cbd5e1');
+      root.style.setProperty('--border-subtle', '#e2e8f0');
+      root.style.setProperty('--border-light', 'rgba(226, 232, 240, 0.8)');
+      root.style.setProperty('--accent-gold', '#d97706');
+      root.style.setProperty('--accent-gold-hover', '#b45309');
+      root.style.setProperty('--accent-gold-subtle', 'rgba(217, 119, 6, 0.12)');
+      root.style.setProperty('--accent-gold-border', 'rgba(217, 119, 6, 0.3)');
+      root.style.setProperty('--shadow-main', '0 10px 25px -5px rgba(15, 23, 42, 0.08)');
+      root.style.setProperty('--header-bg', 'rgba(255, 255, 255, 0.95)');
+    } else {
+      root.classList.add('dark');
+      root.classList.remove('light');
+      root.setAttribute('data-theme', 'dark');
+      root.style.colorScheme = 'dark';
+      root.style.setProperty('--theme-mode', 'dark');
+      root.style.setProperty('--bg-app', '#020617');
+      root.style.setProperty('--bg-primary', '#0f172a');
+      root.style.setProperty('--bg-secondary', '#1e293b');
+      root.style.setProperty('--bg-tertiary', '#334155');
+      root.style.setProperty('--bg-card', 'rgba(15, 23, 42, 0.95)');
+      root.style.setProperty('--bg-card-hover', 'rgba(30, 41, 59, 0.8)');
+      root.style.setProperty('--bg-input', '#1e293b');
+      root.style.setProperty('--text-primary', '#f8fafc');
+      root.style.setProperty('--text-secondary', '#cbd5e1');
+      root.style.setProperty('--text-muted', '#94a3b8');
+      root.style.setProperty('--border-primary', '#334155');
+      root.style.setProperty('--border-subtle', '#1e293b');
+      root.style.setProperty('--border-light', 'rgba(51, 65, 85, 0.8)');
+      root.style.setProperty('--accent-gold', '#fbbf24');
+      root.style.setProperty('--accent-gold-hover', '#f59e0b');
+      root.style.setProperty('--accent-gold-subtle', 'rgba(245, 158, 11, 0.15)');
+      root.style.setProperty('--accent-gold-border', 'rgba(245, 158, 11, 0.3)');
+      root.style.setProperty('--shadow-main', '0 10px 25px -5px rgba(0, 0, 0, 0.5)');
+      root.style.setProperty('--header-bg', 'rgba(15, 23, 42, 0.95)');
+    }
+  };
+
   const toggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+    const nextTheme: 'dark' | 'light' = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('zolabooks_theme', nextTheme);
+    setCurrentUser(prev => ({ ...prev, theme: nextTheme }));
+    applyThemeCssVariables(nextTheme);
+
+    playSoundEffect('click');
+    triggerHapticFeedback('light');
+
+    // Persist to Firestore if user is authenticated
+    if (auth.currentUser) {
+      syncUserDataToFirestore({
+        id: auth.currentUser.uid,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: currentUser.purchasedBookIds || [],
+        favoriteBookIds: favoriteBookIds || [],
+        readingProgressMap: readingProgressMap || {},
+        bookmarks: bookmarks || [],
+        highlights: highlights || [],
+        theme: nextTheme
+      }).catch(err => {
+        console.warn('Erro ao persistir preferência de tema no Firestore:', err);
+      });
+    }
+  };
+
+  const setThemeMode = (mode: 'dark' | 'light') => {
+    if (mode === theme) return;
+    setTheme(mode);
+    localStorage.setItem('zolabooks_theme', mode);
+    setCurrentUser(prev => ({ ...prev, theme: mode }));
+    applyThemeCssVariables(mode);
+
+    playSoundEffect('click');
+    triggerHapticFeedback('light');
+
+    if (auth.currentUser) {
+      syncUserDataToFirestore({
+        id: auth.currentUser.uid,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: currentUser.purchasedBookIds || [],
+        favoriteBookIds: favoriteBookIds || [],
+        readingProgressMap: readingProgressMap || {},
+        bookmarks: bookmarks || [],
+        highlights: highlights || [],
+        theme: mode
+      }).catch(err => {
+        console.warn('Erro ao persistir preferência de tema no Firestore:', err);
+      });
+    }
   };
 
   useEffect(() => {
     localStorage.setItem('zolabooks_theme', theme);
-    if (theme === 'light') {
-      document.documentElement.classList.add('light');
-      document.documentElement.classList.remove('dark');
-    } else {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-    }
+    applyThemeCssVariables(theme);
   }, [theme]);
 
   // Ref to prevent circular updates between local sync and Firestore listener
@@ -1196,14 +1377,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Manual trigger for cloud sync
   const triggerCloudSync = async () => {
-    if (!currentUser || !currentUser.email) {
-      addNotification('Sincronização na Nuvem', 'Inicia sessão para sincronizar a tua leitura entre múltiplos dispositivos.', 'system');
+    if (!auth.currentUser) {
+      requireAuth('sincronizar a tua biblioteca na nuvem e aceder aos teus dados em múltiplos dispositivos');
       return;
     }
     setCloudSyncStatus('syncing');
     try {
       await syncUserDataToFirestore({
-        id: currentUser.email,
+        id: auth.currentUser.uid,
         name: currentUser.name,
         email: currentUser.email,
         role: currentUser.role,
@@ -1225,9 +1406,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Force Manual Upload to Cloud (Local -> Firestore)
   const forceUploadToCloud = async (): Promise<{ success: boolean; message: string; details?: any }> => {
-    if (!currentUser || !currentUser.email) {
-      addNotification('Sincronização na Nuvem', 'Inicia sessão para enviar dados para o Firestore.', 'system');
-      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    if (!auth.currentUser) {
+      requireAuth('enviar dados locais para a nuvem Firestore');
+      return { success: false, message: 'Inicia sessão para sincronizar com o Firestore.' };
     }
     const startTime = performance.now();
     setCloudSyncStatus('syncing');
@@ -1240,7 +1421,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const totalEntities = purchasedIds.length + favIds.length + Object.keys(progMap).length + bkmks.length + hlights.length;
 
       await syncUserDataToFirestore({
-        id: currentUser.email,
+        id: auth.currentUser.uid,
         name: currentUser.name,
         email: currentUser.email,
         role: currentUser.role,
@@ -1312,14 +1493,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Force Manual Download from Cloud (Firestore -> Local)
   const forceDownloadFromCloud = async (): Promise<{ success: boolean; message: string; details?: any }> => {
-    if (!currentUser || !currentUser.email) {
-      addNotification('Sincronização na Nuvem', 'Inicia sessão para descarregar dados da nuvem.', 'system');
-      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    if (!auth.currentUser) {
+      requireAuth('descarregar dados da nuvem Firestore');
+      return { success: false, message: 'Inicia sessão para descarregar dados da nuvem.' };
     }
     const startTime = performance.now();
     setCloudSyncStatus('syncing');
     try {
-      const remoteData = await fetchUserDataFromFirestore(currentUser.email);
+      const remoteData = await fetchUserDataFromFirestore(auth.currentUser.uid);
       const durationMs = Math.round(performance.now() - startTime);
 
       if (!remoteData) {
@@ -1448,14 +1629,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Force Bidirectional Sync (Fetch Remote -> Merge -> Push Snapshot)
   const forceBidirectionalSync = async (): Promise<{ success: boolean; message: string; details?: any }> => {
-    if (!currentUser || !currentUser.email) {
-      addNotification('Sincronização na Nuvem', 'Inicia sessão para sincronizar dispositivos.', 'system');
-      return { success: false, message: 'Nenhum utilizador com sessão iniciada.' };
+    if (!auth.currentUser) {
+      requireAuth('sincronizar dispositivos com a nuvem Firestore');
+      return { success: false, message: 'Inicia sessão para sincronizar dispositivos.' };
     }
     const startTime = performance.now();
     setCloudSyncStatus('syncing');
     try {
-      const remoteData = await fetchUserDataFromFirestore(currentUser.email);
+      const remoteData = await fetchUserDataFromFirestore(auth.currentUser.uid);
 
       // Merge purchased books
       const mergedPurchased = Array.from(new Set([
@@ -1509,7 +1690,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Push reconciled snapshot back to Firestore
       await syncUserDataToFirestore({
-        id: currentUser.email,
+        id: auth.currentUser.uid,
         name: currentUser.name,
         email: currentUser.email,
         role: currentUser.role,
@@ -1647,9 +1828,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Preview Remote Data without applying it directly
   const getRemoteSyncDataPreview = async (): Promise<UserSyncData | null> => {
-    if (!currentUser?.email) return null;
+    if (!auth.currentUser) return null;
     try {
-      return await fetchUserDataFromFirestore(currentUser.email);
+      return await fetchUserDataFromFirestore(auth.currentUser.uid);
     } catch (e) {
       console.warn('Erro ao obter pré-visualização dos dados remotos:', e);
       return null;
@@ -1858,9 +2039,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Firestore Real-time synchronization
   useEffect(() => {
-    if (!currentUser || !currentUser.email) return;
+    if (!auth.currentUser) return;
+    const userIdOrEmail = auth.currentUser.uid;
 
-    const unsubscribe = subscribeToUserSyncData(currentUser.email, (remoteData) => {
+    const unsubscribe = subscribeToUserSyncData(userIdOrEmail, (remoteData) => {
       if (remoteData) {
         isUpdatingFromRemote.current = true;
 
@@ -1923,6 +2105,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
 
+        if (remoteData.theme && (remoteData.theme === 'dark' || remoteData.theme === 'light')) {
+          setTheme(prev => {
+            if (prev !== remoteData.theme) {
+              localStorage.setItem('zolabooks_theme', remoteData.theme!);
+              return remoteData.theme!;
+            }
+            return prev;
+          });
+        }
+
         setCloudSyncStatus('synced');
         setLastSyncedAt(new Date());
 
@@ -1933,30 +2125,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return () => unsubscribe();
-  }, [currentUser.email]);
+  }, [currentUser.id, currentUser.email]);
 
-  // Sync to Firestore whenever favorites, purchased books, reading progress, bookmarks, or highlights change locally
+  // Sync to Firestore whenever favorites, purchased books, reading progress, bookmarks, highlights, or theme change locally
   useEffect(() => {
-    if (isUpdatingFromRemote.current || !currentUser || !currentUser.email) return;
+    if (isUpdatingFromRemote.current || !currentUser) return;
 
-    setCloudSyncStatus('syncing');
-    syncUserDataToFirestore({
-      id: currentUser.email,
-      name: currentUser.name,
-      email: currentUser.email,
-      role: currentUser.role,
-      purchasedBookIds: currentUser.purchasedBookIds || [],
-      favoriteBookIds: favoriteBookIds || [],
-      readingProgressMap: readingProgressMap || {},
-      bookmarks: bookmarks || [],
-      highlights: highlights || []
-    }).then(() => {
+    if (auth.currentUser) {
+      setCloudSyncStatus('syncing');
+      syncUserDataToFirestore({
+        id: auth.currentUser.uid,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        purchasedBookIds: currentUser.purchasedBookIds || [],
+        favoriteBookIds: favoriteBookIds || [],
+        readingProgressMap: readingProgressMap || {},
+        bookmarks: bookmarks || [],
+        highlights: highlights || [],
+        theme: theme
+      }).then(() => {
+        setCloudSyncStatus('synced');
+        setLastSyncedAt(new Date());
+      }).catch(() => {
+        setCloudSyncStatus('synced');
+      });
+    } else {
+      // Local storage persistence is active
       setCloudSyncStatus('synced');
       setLastSyncedAt(new Date());
-    }).catch(() => {
-      setCloudSyncStatus('error');
-    });
-  }, [favoriteBookIds, currentUser.purchasedBookIds, readingProgressMap, bookmarks, highlights, currentUser.email]);
+    }
+  }, [favoriteBookIds, currentUser.purchasedBookIds, readingProgressMap, bookmarks, highlights, theme, currentUser.id, currentUser.email]);
 
   // Load books from backend API
   const refreshBooks = async () => {
@@ -2977,6 +3176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         theme,
         toggleTheme,
+        setThemeMode,
 
         isOnline,
         offlineBooks,
@@ -2999,6 +3199,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deviceStorageEstimate,
         refreshStorageEstimate,
         pinAndDownloadAllPurchased,
+
+        // 3G Image & Cover Cache API (Stale-While-Revalidate)
+        imageCacheStats,
+        isPrefetchingImages,
+        prefetchImagesProgress,
+        prefetchAllCatalogImages,
+        clearImageCache,
+        refreshImageCacheStats,
 
         bookClubs,
         joinBookClub,
